@@ -273,6 +273,21 @@ function M.cutTreeLoop()
                     and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
                 if not hrp then break end
 
+                -- WASD-style random walk รอบ ๆ ต้นไม้ (floatAP ล็อคไม่ให้ตก)
+                local treePos = tree:IsA("Model") and tree:GetPivot().Position or tree.Position
+                local dir = math.random(1, 4)
+                local offset
+                if dir == 1 then offset = Vector3.new(-3, 0, 0)
+                elseif dir == 2 then offset = Vector3.new(0, 0, -3)
+                elseif dir == 3 then offset = Vector3.new(3, 0, 0)
+                else offset = Vector3.new(0, 0, 3)
+                end
+                local walkPos = treePos + Vector3.new(0, 30, 0) + offset
+                if _G.floatAP and _G.floatAP.Parent then
+                    _G.floatAP.Position = walkPos
+                end
+                hrp.CFrame = CFrame.new(walkPos)
+
                 local ok, err = pcall(function()
                     Event:InvokeServer(tree, axeRef, ownerId, hrp.CFrame, false)
                 end)
