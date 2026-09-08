@@ -69,14 +69,22 @@ function M.getAxe()
         local char = lp.Character
         local th = char and char:FindFirstChild("ToolHandle")
         local currentAxe = th and th:FindFirstChild("OriginalItem") and th.OriginalItem.Value
-        if currentAxe and (currentAxe.Name == "Woodsman's Axe" or currentAxe:GetAttribute("ToolName") == "GenericAxe") then
+        if currentAxe and currentAxe.Name == "Woodsman's Axe" then
             return currentAxe
         end
-        -- 2) ลองจาก Inventory (axe ยังไม่ถูก equip)
+        -- 2a) ลองจาก Inventory ด้วย attribute ToolName (เหมือน MainScript.lua)
         local inv = lp:FindFirstChild("Inventory")
         if inv then
             for _, tool in ipairs(inv:GetChildren()) do
-                if (tool.Name == "Woodsman's Axe" or tool:GetAttribute("ToolName") == "GenericAxe") then
+                if tool:GetAttribute("ToolName") == "GenericAxe" then
+                    return tool
+                end
+            end
+        end
+        -- 2b) ลองชื่อ "Woodsman's Axe" เป็น fallback
+        if inv then
+            for _, tool in ipairs(inv:GetChildren()) do
+                if tool.Name == "Woodsman's Axe" then
                     return tool
                 end
             end
@@ -98,7 +106,7 @@ function M.equipAxe()
         local th = char and char:FindFirstChild("ToolHandle")
         if th and th:FindFirstChild("OriginalItem")
             and th.OriginalItem.Value
-            and (th.OriginalItem.Value.Name == "Woodsman's Axe" or th.OriginalItem.Value:GetAttribute("ToolName") == "GenericAxe") then
+            and th.OriginalItem.Value.Name == "Woodsman's Axe" then
             return th.OriginalItem.Value
         end
     end
@@ -110,7 +118,7 @@ function M.ensureEquipped()
     local th = char and char:FindFirstChild("ToolHandle")
     local curAxe = th and th:FindFirstChild("OriginalItem")
         and th.OriginalItem.Value
-    if curAxe and (curAxe.Name == "Woodsman's Axe" or curAxe:GetAttribute("ToolName") == "GenericAxe") then
+    if curAxe and curAxe.Name == "Woodsman's Axe" then
         return curAxe
     end
     return M.equipAxe()
