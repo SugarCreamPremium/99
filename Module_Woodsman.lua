@@ -59,33 +59,32 @@ end
 -- Axe helpers
 -- ============================================
 function M.getAxe()
+    -- ตรวจทั้ง Inventory และ ToolHandle (axe อาจถูก equip แล้ว)
     local lp = _G.LocalPlayer
     if not lp then
         local pl = game:GetService("Players")
         lp = pl.LocalPlayer or pl:WaitForChild("LocalPlayer")
     end
-    -- DEBUG: แสดงสถานะการค้นหาขวาน (ให้ลบทีหลัง)
-    print("[Woodsman DEBUG getAxe] lp=" .. tostring(lp) .. " exists=" .. tostring(lp ~= nil))
-    if not lp then
-        warn("[Woodsman DEBUG getAxe] LocalPlayer is nil! Waiting...")
-        return nil
-    end
+    if not lp then return nil end
+
+    -- 1) ลองจาก Inventory ก่อน
     local inv = lp:FindFirstChild("Inventory")
-    print("[Woodsman DEBUG getAxe] Inventory=" .. tostring(inv) .. " exists=" .. tostring(inv ~= nil))
-    if not inv then return nil end
-    local invItems = {}
-    for _, tool in ipairs(inv:GetChildren()) do
-        table.insert(invItems, tool.Name)
-    end
-    print("[Woodsman DEBUG getAxe] Inventory items: " .. table.concat(invItems, ", ") .. " (count=" .. #invItems .. ")")
-    for _, tool in ipairs(inv:GetChildren()) do
-        print("[Woodsman DEBUG getAxe] Checking: " .. tool.Name)
-        if tool.Name == "Woodsman's Axe" then
-            print("[Woodsman DEBUG getAxe] FOUND Woodsman's Axe!")
-            return tool
+    if inv then
+        for _, tool in ipairs(inv:GetChildren()) do
+            if tool.Name == "Woodsman's Axe" then
+                return tool
+            end
         end
     end
-    print("[Woodsman DEBUG getAxe] Woodsman's Axe NOT FOUND in inventory")
+
+    -- 2) ลองจาก ToolHandle (axe ถูก equip แล้ว)
+    local char = lp.Character
+    local th = char and char:FindFirstChild("ToolHandle")
+    local currentAxe = th and th:FindFirstChild("OriginalItem") and th.OriginalItem.Value
+    if currentAxe and currentAxe.Name == "Woodsman's Axe" then
+        return currentAxe
+    end
+
     return nil
 end
 
