@@ -14,23 +14,27 @@
 
 local M = {}
 
+local LP = _G.LocalPlayer or game:GetService("Players").LocalPlayer
+local CQ = _G.CLASS_QUESTS
+local CSC = _G.classStatCache
+
 -- ============================================
 -- Quest checks
 -- ============================================
 M.isAlienScientist = (_G.__WSM_currentClass or "Unknown") == "Alien Scientist"
 
 local function getDissolveRay()
-    local inv = LocalPlayer:FindFirstChild("Inventory")
+    local inv = LP:FindFirstChild("Inventory")
     return inv and inv:FindFirstChild("Dissolve Ray")
 end
 
 function M.isAllQuestDone()
-    local lvl = LocalPlayer:GetAttribute("ClassLevel") or 1
-    local reqs = CLASS_QUESTS["Alien Scientist"]
-        and CLASS_QUESTS["Alien Scientist"][lvl + 1]
+    local lvl = LP:GetAttribute("ClassLevel") or 1
+    local reqs = CQ["Alien Scientist"]
+        and CQ["Alien Scientist"][lvl + 1]
     if not reqs or not reqs.Dissolves then return true end
-    local have = classStatCache["Alien Scientist"]
-        and classStatCache["Alien Scientist"]["Dissolves"] or 0
+    local have = CSC["Alien Scientist"]
+        and CSC["Alien Scientist"]["Dissolves"] or 0
     return have >= reqs.Dissolves
 end
 
@@ -68,12 +72,12 @@ function M.nightLoop()
             if not questOk then
                 warn(string.format("[AlienScientist] isAlienScientistAllQuestDone() error: %s", tostring(questResult)))
             elseif questResult then
-                local lvl = LocalPlayer:GetAttribute("ClassLevel") or 1
-                local goal = (CLASS_QUESTS["Alien Scientist"]
-                    and CLASS_QUESTS["Alien Scientist"][lvl + 1]
-                    and CLASS_QUESTS["Alien Scientist"][lvl + 1].Dissolves) or 0
-                local have = classStatCache["Alien Scientist"]
-                    and classStatCache["Alien Scientist"]["Dissolves"] or 0
+                local lvl = LP:GetAttribute("ClassLevel") or 1
+                local goal = (CQ["Alien Scientist"]
+                    and CQ["Alien Scientist"][lvl + 1]
+                    and CQ["Alien Scientist"][lvl + 1].Dissolves) or 0
+                local have = CSC["Alien Scientist"]
+                    and CSC["Alien Scientist"]["Dissolves"] or 0
                 print(string.format("[AlienScientist] Quest done: Dissolves %d/%d", have, goal))
                 return
             end
@@ -108,8 +112,8 @@ function M.nightLoop()
                         if not ray then continue end
 
                         -- ลอยเหนือมอน
-                        local hrp = LocalPlayer.Character
-                            and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                        local hrp = LP.Character
+                            and LP.Character:FindFirstChild("HumanoidRootPart")
                         local root = m:FindFirstChild("HumanoidRootPart") or m.PrimaryPart
                         if hrp and root then
                             if not _G.floatAP or not _G.floatAP.Parent then
