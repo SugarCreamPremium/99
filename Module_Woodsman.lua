@@ -60,31 +60,40 @@ end
 -- ============================================
 function M.getAxe()
     -- ตรวจทั้ง Inventory และ ToolHandle (axe อาจถูก equip แล้ว)
-    local lp = _G.LocalPlayer
-    if not lp then
-        local pl = game:GetService("Players")
-        lp = pl.LocalPlayer or pl:WaitForChild("LocalPlayer")
-    end
-    if not lp then return nil end
+    -- Retry 3 รอบ (รอ server spawn axe ช้า)
+    for retry = 1, 3 do
+        local lp = _G.LocalPlayer
+        if not lp then
+            local pl = game:GetService("Players")
+            lp = pl.LocalPlayer or pl:WaitForChild("LocalPlayer")
+        end
+        if not lp then
+            return nil
+        end
 
-    -- 1) ลองจาก Inventory ก่อน
-    local inv = lp:FindFirstChild("Inventory")
-    if inv then
-        for _, tool in ipairs(inv:GetChildren()) do
-            if tool.Name == "Woodsman's Axe" then
-                return tool
+        -- 1) ลองจาก Inventory ก่อน
+        local inv = lp:FindFirstChild("Inventory")
+        if inv then
+            for _, tool in ipairs(inv:GetChildren()) do
+                if tool.Name == "Woodsman's Axe" then
+                    return tool
+                end
             end
         end
-    end
 
-    -- 2) ลองจาก ToolHandle (axe ถูก equip แล้ว)
-    local char = lp.Character
-    local th = char and char:FindFirstChild("ToolHandle")
-    local currentAxe = th and th:FindFirstChild("OriginalItem") and th.OriginalItem.Value
-    if currentAxe and currentAxe.Name == "Woodsman's Axe" then
-        return currentAxe
-    end
+        -- 2) ลองจาก ToolHandle (axe ถูก equip แล้ว)
+        local char = lp.Character
+        local th = char and char:FindFirstChild("ToolHandle")
+        local currentAxe = th and th:FindFirstChild("OriginalItem") and th.OriginalItem.Value
+        if currentAxe and currentAxe.Name == "Woodsman's Axe" then
+            return currentAxe
+        end
 
+        -- Retry delay (รอ server spawn axe)
+        if retry < 3 then
+            task.wait(0.5)
+        end
+    end
     return nil
 end
 
