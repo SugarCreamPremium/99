@@ -23,28 +23,35 @@ local M = {}
 -- ============================================
 -- Quest checks
 -- ============================================
+-- Setup
+-- ============================================
+local LP = _G.LocalPlayer or game:GetService("Players").LocalPlayer
+local CQ = _G.CLASS_QUESTS
+local CSC = _G.classStatCache
+
+-- ============================================
 M.isVampire = (_G.__WSM_currentClass or "Unknown") == "Vampire"
 
 local function getVampireScythe()
-    local inv = LocalPlayer:FindFirstChild("Inventory")
+    local inv = LP:FindFirstChild("Inventory")
     return inv and inv:FindFirstChild("Vampire Scythe")
 end
 
 function M.isLifestealDone()
-    local lvl = LocalPlayer:GetAttribute("ClassLevel") or 1
-    local reqs = CLASS_QUESTS["Vampire"] and CLASS_QUESTS["Vampire"][lvl + 1]
+    local lvl = LP:GetAttribute("ClassLevel") or 1
+    local reqs = CQ["Vampire"] and CQ["Vampire"][lvl + 1]
     if not reqs or not reqs.LifestealHealing then return true end
-    local have = classStatCache["Vampire"]
-        and classStatCache["Vampire"]["LifestealHealing"] or 0
+    local have = CSC["Vampire"]
+        and CSC["Vampire"]["LifestealHealing"] or 0
     return have >= reqs.LifestealHealing
 end
 
 function M.isDealDamageDone()
-    local lvl = LocalPlayer:GetAttribute("ClassLevel") or 1
-    local reqs = CLASS_QUESTS["Vampire"] and CLASS_QUESTS["Vampire"][lvl + 1]
+    local lvl = LP:GetAttribute("ClassLevel") or 1
+    local reqs = CQ["Vampire"] and CQ["Vampire"][lvl + 1]
     if not reqs or not reqs.DealDamage then return true end
-    local have = classStatCache["Vampire"]
-        and classStatCache["Vampire"]["DealDamage"] or 0
+    local have = CSC["Vampire"]
+        and CSC["Vampire"]["DealDamage"] or 0
     return have >= reqs.DealDamage
 end
 
@@ -56,7 +63,7 @@ end
 -- HP helpers
 -- ============================================
 local function getMyHumanoid()
-    local myChar = workspace:FindFirstChild(LocalPlayer.Name)
+    local myChar = workspace:FindFirstChild(LP.Name)
     return myChar and myChar:FindFirstChildOfClass("Humanoid")
 end
 
@@ -89,7 +96,7 @@ function M.nightLoop()
     if not scythe then
         warn("[Vampire] Vampire Scythe not found in Inventory - cannot fight, will skip hits")
     end
-    if not LocalPlayer:FindFirstChild("Inventory") then
+    if not LP:FindFirstChild("Inventory") then
         warn("[Vampire] LocalPlayer.Inventory not found - cannot proceed")
     end
 
@@ -119,16 +126,16 @@ function M.nightLoop()
                     warn(string.format("[Vampire] isVampireAllQuestDone() error: %s", tostring(questResult)))
                 elseif questResult then
                     print(string.format("[Vampire] Quests done: Lifesteal %d/%d, DealDamage %d/%d",
-                        classStatCache["Vampire"] and classStatCache["Vampire"]["LifestealHealing"] or 0,
-                        CLASS_QUESTS["Vampire"] and CLASS_QUESTS["Vampire"][(LocalPlayer:GetAttribute("ClassLevel") or 1) + 1]
-                            and CLASS_QUESTS["Vampire"][(LocalPlayer:GetAttribute("ClassLevel") or 1) + 1].LifestealHealing or 0,
-                        classStatCache["Vampire"] and classStatCache["Vampire"]["DealDamage"] or 0,
-                        CLASS_QUESTS["Vampire"] and CLASS_QUESTS["Vampire"][(LocalPlayer:GetAttribute("ClassLevel") or 1) + 1]
-                            and CLASS_QUESTS["Vampire"][(LocalPlayer:GetAttribute("ClassLevel") or 1) + 1].DealDamage or 0))
+                        CSC["Vampire"] and CSC["Vampire"]["LifestealHealing"] or 0,
+                        CQ["Vampire"] and CQ["Vampire"][(LP:GetAttribute("ClassLevel") or 1) + 1]
+                            and CQ["Vampire"][(LP:GetAttribute("ClassLevel") or 1) + 1].LifestealHealing or 0,
+                        CSC["Vampire"] and CSC["Vampire"]["DealDamage"] or 0,
+                        CQ["Vampire"] and CQ["Vampire"][(LP:GetAttribute("ClassLevel") or 1) + 1]
+                            and CQ["Vampire"][(LP:GetAttribute("ClassLevel") or 1) + 1].DealDamage or 0))
                     break
                 else
                     local humOk, humErr = pcall(function()
-                        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                        local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
                         if hum and hum.Health < 100 then
                             hum.Health = 100
                         end
@@ -166,8 +173,8 @@ function M.nightLoop()
                             -- ลด HP ตัวเองก่อนตี
                             M.keepHPOne()
                             -- ลอยเหนือมอน
-                            local hrp = LocalPlayer.Character
-                                and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                            local hrp = LP.Character
+                                and LP.Character:FindFirstChild("HumanoidRootPart")
                             local root = m:FindFirstChild("HumanoidRootPart") or m.PrimaryPart
                             if hrp and root then
                                 if not _G.floatAP or not _G.floatAP.Parent then
