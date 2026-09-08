@@ -59,7 +59,12 @@ end
 -- Axe helpers
 -- ============================================
 function M.getAxe()
-    local lp = _G.LocalPlayer or game:GetService("Players").LocalPlayer
+    local lp = _G.LocalPlayer
+    if not lp then
+        local pl = game:GetService("Players")
+        lp = pl.LocalPlayer or pl:WaitForChild("LocalPlayer")
+    end
+    if not lp then return nil end
     local inv = lp:FindFirstChild("Inventory")
     if not inv then return nil end
     for _, tool in ipairs(inv:GetChildren()) do
