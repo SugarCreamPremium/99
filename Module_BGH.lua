@@ -16,6 +16,13 @@
 local M = {}
 
 -- ============================================
+-- Setup
+-- ============================================
+local LP = _G.LocalPlayer or game:GetService("Players").LocalPlayer
+local CQ = _G.CLASS_QUESTS
+local CSC = _G.classStatCache
+
+-- ============================================
 -- Quest checks
 -- ============================================
 M.isBigGameHunter = (_G.__WSM_currentClass or "Unknown") == "Big Game Hunter"
@@ -44,21 +51,21 @@ M.PELT_ITEMS = {
 M.PELT_SKIP = { ["Cultist King Antler"] = true }
 
 function M.isWolfKillsQuestDone()
-    local lvl = LocalPlayer:GetAttribute("ClassLevel") or 1
-    local reqs = CLASS_QUESTS["Big Game Hunter"]
-        and CLASS_QUESTS["Big Game Hunter"][lvl + 1]
+    local lvl = LP:GetAttribute("ClassLevel") or 1
+    local reqs = CQ["Big Game Hunter"]
+        and CQ["Big Game Hunter"][lvl + 1]
     if not reqs or not reqs.WolfKills then return true end
-    local have = classStatCache["Big Game Hunter"]
-        and classStatCache["Big Game Hunter"]["WolfKills"] or 0
+    local have = CSC["Big Game Hunter"]
+        and CSC["Big Game Hunter"]["WolfKills"] or 0
     return have >= reqs.WolfKills
 end
 
 function M.isAllQuestDone()
-    local lvl = LocalPlayer:GetAttribute("ClassLevel") or 1
-    local reqs = CLASS_QUESTS["Big Game Hunter"]
-        and CLASS_QUESTS["Big Game Hunter"][lvl + 1]
+    local lvl = LP:GetAttribute("ClassLevel") or 1
+    local reqs = CQ["Big Game Hunter"]
+        and CQ["Big Game Hunter"][lvl + 1]
     if not reqs then return true end
-    local have = classStatCache["Big Game Hunter"] or {}
+    local have = CSC["Big Game Hunter"] or {}
     for statKey, goal in pairs(reqs) do
         local v = have[statKey] or 0
         if v < goal then return false end
@@ -71,7 +78,7 @@ end
 -- ============================================
 function M.getActivePeltTypes()
     -- หา pelt types ที่ยังไม่ครบ limit 3
-    local inv = LocalPlayer:FindFirstChild("Inventory")
+    local inv = LP:FindFirstChild("Inventory")
     if not inv then return {} end
     local counts = {}
     for _, item in ipairs(inv:GetChildren()) do
@@ -143,8 +150,8 @@ function M.nightLoop()
             if not monsters or #monsters == 0 then
                 print("[BigGameHunter] No hittable monsters - flying to find more")
                 -- บินหา
-                local hrp = LocalPlayer.Character
-                    and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                local hrp = LP.Character
+                    and LP.Character:FindFirstChild("HumanoidRootPart")
                 if hrp then
                     local center = hrp.Position
                     for angle = 0, 360, 60 do
@@ -160,8 +167,8 @@ function M.nightLoop()
                     if _G.checkAnyCultistSpawned() then return end
                     if not (m and m.Parent) then continue end
 
-                    local hrp = LocalPlayer.Character
-                        and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                    local hrp = LP.Character
+                        and LP.Character:FindFirstChild("HumanoidRootPart")
                     local root = m:FindFirstChild("HumanoidRootPart") or m.PrimaryPart
                     if not (hrp and root) then continue end
 
@@ -189,11 +196,11 @@ function M.nightLoop()
         end
 
         -- Check quest progress
-        local lvl = LocalPlayer:GetAttribute("ClassLevel") or 1
-        local reqs = CLASS_QUESTS["Big Game Hunter"]
-            and CLASS_QUESTS["Big Game Hunter"][lvl + 1]
+        local lvl = LP:GetAttribute("ClassLevel") or 1
+        local reqs = CQ["Big Game Hunter"]
+            and CQ["Big Game Hunter"][lvl + 1]
         if reqs then
-            local have = classStatCache["Big Game Hunter"] or {}
+            local have = CSC["Big Game Hunter"] or {}
             local consume = have.ConsumePelt or 0
             local wolves = have.WolfKills or 0
             local goalConsume = reqs.ConsumePelt or 0
