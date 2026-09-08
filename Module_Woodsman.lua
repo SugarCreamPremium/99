@@ -64,14 +64,28 @@ function M.getAxe()
         local pl = game:GetService("Players")
         lp = pl.LocalPlayer or pl:WaitForChild("LocalPlayer")
     end
-    if not lp then return nil end
+    -- DEBUG: แสดงสถานะการค้นหาขวาน (ให้ลบทีหลัง)
+    print("[Woodsman DEBUG getAxe] lp=" .. tostring(lp) .. " exists=" .. tostring(lp ~= nil))
+    if not lp then
+        warn("[Woodsman DEBUG getAxe] LocalPlayer is nil! Waiting...")
+        return nil
+    end
     local inv = lp:FindFirstChild("Inventory")
+    print("[Woodsman DEBUG getAxe] Inventory=" .. tostring(inv) .. " exists=" .. tostring(inv ~= nil))
     if not inv then return nil end
+    local invItems = {}
     for _, tool in ipairs(inv:GetChildren()) do
+        table.insert(invItems, tool.Name)
+    end
+    print("[Woodsman DEBUG getAxe] Inventory items: " .. table.concat(invItems, ", ") .. " (count=" .. #invItems .. ")")
+    for _, tool in ipairs(inv:GetChildren()) do
+        print("[Woodsman DEBUG getAxe] Checking: " .. tool.Name)
         if tool.Name == "Woodsman's Axe" then
+            print("[Woodsman DEBUG getAxe] FOUND Woodsman's Axe!")
             return tool
         end
     end
+    print("[Woodsman DEBUG getAxe] Woodsman's Axe NOT FOUND in inventory")
     return nil
 end
 
