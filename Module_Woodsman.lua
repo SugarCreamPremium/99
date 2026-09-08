@@ -79,7 +79,7 @@ function M.equipAxe()
     pcall(function() Client.InventoryHandler.RequestEquipItem(axe) end)
     for i = 1, 30 do  -- 3s timeout
         task.wait(0.1)
-        local char = LocalPlayer.Character
+        local char = LP.Character
         local th = char and char:FindFirstChild("ToolHandle")
         if th and th:FindFirstChild("OriginalItem")
             and th.OriginalItem.Value
@@ -91,7 +91,7 @@ function M.equipAxe()
 end
 
 function M.ensureEquipped()
-    local char = LocalPlayer.Character
+    local char = LP.Character
     local th = char and char:FindFirstChild("ToolHandle")
     local curAxe = th and th:FindFirstChild("OriginalItem")
         and th.OriginalItem.Value
@@ -154,8 +154,8 @@ function M.axeKillsLoop()
             if _G.checkAnyCultistSpawned() then return "stronghold" end
             if not (monster and monster.Parent) then continue end
 
-            local hrp = LocalPlayer.Character
-                and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            local hrp = LP.Character
+                and LP.Character:FindFirstChild("HumanoidRootPart")
             local root = monster:FindFirstChild("HumanoidRootPart")
                 or monster.PrimaryPart
             if not (hrp and root) then continue end
@@ -223,8 +223,8 @@ function M.cutTreeLoop()
                 return "impossible"
             end
             -- บินหา 1 รอบ
-            local hrp0 = LocalPlayer.Character
-                and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            local hrp0 = LP.Character
+                and LP.Character:FindFirstChild("HumanoidRootPart")
             if hrp0 then
                 local center = hrp0.Position
                 for angle = 0, 360, 60 do
@@ -245,8 +245,8 @@ function M.cutTreeLoop()
             if not (tree and tree.Parent) then continue end
             if not tree:IsDescendantOf(workspace.Map.Foliage) then continue end
 
-            local hrp = LocalPlayer.Character
-                and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            local hrp = LP.Character
+                and LP.Character:FindFirstChild("HumanoidRootPart")
             if not hrp then
                 warn("[Woodsman] No HumanoidRootPart - cannot warp, breaking")
                 return "impossible"
@@ -290,8 +290,8 @@ function M.cutTreeLoop()
                 if M.isCutTreeDone() then break end
                 if _G.checkAnyCultistSpawned() then return "stronghold" end
 
-                hrp = LocalPlayer.Character
-                    and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                hrp = LP.Character
+                    and LP.Character:FindFirstChild("HumanoidRootPart")
                 if not hrp then break end
 
                 local ok, err = pcall(function()
