@@ -22,25 +22,32 @@
 local M = {}
 
 -- ============================================
+-- Setup
+-- ============================================
+local LP = _G.LocalPlayer or game:GetService("Players").LocalPlayer
+local CQ = _G.CLASS_QUESTS
+local CSC = _G.classStatCache
+
+-- ============================================
 -- Quest checks
 -- ============================================
 M.isWoodsman = (_G.__WSM_currentClass or "Unknown") == "Woodsman"
 
 function M.isAxeKillsDone()
-    local lvl = LocalPlayer:GetAttribute("ClassLevel") or 1
-    local reqs = CLASS_QUESTS["Woodsman"] and CLASS_QUESTS["Woodsman"][lvl + 1]
+    local lvl = LP:GetAttribute("ClassLevel") or 1
+    local reqs = CQ["Woodsman"] and CQ["Woodsman"][lvl + 1]
     if not reqs or not reqs.WoodsmanAxeKills then return true end
-    local have = classStatCache["Woodsman"]
-        and classStatCache["Woodsman"]["WoodsmanAxeKills"] or 0
+    local have = CSC["Woodsman"]
+        and CSC["Woodsman"]["WoodsmanAxeKills"] or 0
     return have >= reqs.WoodsmanAxeKills
 end
 
 function M.isCutTreeDone()
-    local lvl = LocalPlayer:GetAttribute("ClassLevel") or 1
-    local reqs = CLASS_QUESTS["Woodsman"] and CLASS_QUESTS["Woodsman"][lvl + 1]
+    local lvl = LP:GetAttribute("ClassLevel") or 1
+    local reqs = CQ["Woodsman"] and CQ["Woodsman"][lvl + 1]
     if not reqs or not reqs.CutTree then return true end
-    local have = classStatCache["Woodsman"]
-        and classStatCache["Woodsman"]["CutTree"] or 0
+    local have = CSC["Woodsman"]
+        and CSC["Woodsman"]["CutTree"] or 0
     return have >= reqs.CutTree
 end
 
@@ -254,13 +261,26 @@ function M.cutTreeLoop()
                 and tree:GetPivot().Position or tree.Position
             local cutPos = treePos + Vector3.new(0, 30, 0)
 
+            -- WASD-style random walk รอบ ๆ ต้นไม้ (floatAP ล็อคไม่ให้ตกพื้น)
+            local dir = math.random(1, 4)  -- 1=W, 2=A, 3=S, 4=D
+            local offset
+            if dir == 1 then offset = Vector3.new(-3, 0, 0)
+            elseif dir == 2 then offset = Vector3.new(0, 0, -3)
+            elseif dir == 3 then offset = Vector3.new(3, 0, 0)
+            else offset = Vector3.new(0, 0, 3)
+            end
+            local walkPos = treePos + Vector3.new(0, 30, 0) + offset
+            if _G.floatAP and _G.floatAP.Parent then
+                _G.floatAP.Position = walkPos
+            end
+            hrp.CFrame = CFrame.new(walkPos)
+
             if not _G.floatAP or not _G.floatAP.Parent then
-                hrp.CFrame = CFrame.new(cutPos)
                 task.wait(0.2)
-                _G.ensureFloating(cutPos)
+                _G.ensureFloating(walkPos)
             else
-                _G.floatAP.Position = cutPos
-                hrp.CFrame = CFrame.new(cutPos)
+                _G.floatAP.Position = walkPos
+                hrp.CFrame = CFrame.new(walkPos)
             end
 
             local hitCount = 0
@@ -272,21 +292,6 @@ function M.cutTreeLoop()
                 hrp = LocalPlayer.Character
                     and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
                 if not hrp then break end
-
-                -- WASD-style random walk รอบ ๆ ต้นไม้ (floatAP ล็อคไม่ให้ตก)
-                local treePos = tree:IsA("Model") and tree:GetPivot().Position or tree.Position
-                local dir = math.random(1, 4)
-                local offset
-                if dir == 1 then offset = Vector3.new(-3, 0, 0)
-                elseif dir == 2 then offset = Vector3.new(0, 0, -3)
-                elseif dir == 3 then offset = Vector3.new(3, 0, 0)
-                else offset = Vector3.new(0, 0, 3)
-                end
-                local walkPos = treePos + Vector3.new(0, 30, 0) + offset
-                if _G.floatAP and _G.floatAP.Parent then
-                    _G.floatAP.Position = walkPos
-                end
-                hrp.CFrame = CFrame.new(walkPos)
 
                 local ok, err = pcall(function()
                     Event:InvokeServer(tree, axeRef, ownerId, hrp.CFrame, false)
