@@ -59,19 +59,20 @@ end
 -- Axe helpers
 -- ============================================
 function M.getAxe()
-    -- ตรวจทั้ง Inventory และ ToolHandle (axe อาจถูก equip แล้ว)
-    -- Retry 3 รอบ (รอ server spawn axe ช้า)
-    for retry = 1, 3 do
-        local lp = _G.LocalPlayer
-        if not lp then
-            local pl = game:GetService("Players")
-            lp = pl.LocalPlayer or pl:WaitForChild("LocalPlayer")
+    -- ตรวจ axe ที่ถืออยู่ (ToolHandle) ก่อน — เพราะเมื่อ equip แล้ว axe จะไม่อยู่ใน Inventory อีก
+    local lp = _G.LocalPlayer
+    if not lp then
+        local pl = game:GetService("Players")
+        lp = pl.LocalPlayer or pl:WaitForChild("LocalPlayer")
+    end
+    if lp then
+        local char = lp.Character
+        local th = char and char:FindFirstChild("ToolHandle")
+        local currentAxe = th and th:FindFirstChild("OriginalItem") and th.OriginalItem.Value
+        if currentAxe and currentAxe.Name == "Woodsman's Axe" then
+            return currentAxe
         end
-        if not lp then
-            return nil
-        end
-
-        -- 1) ลองจาก Inventory ก่อน
+        -- 2) ลองจาก Inventory (axe ยังไม่ถูก equip)
         local inv = lp:FindFirstChild("Inventory")
         if inv then
             for _, tool in ipairs(inv:GetChildren()) do
@@ -79,19 +80,6 @@ function M.getAxe()
                     return tool
                 end
             end
-        end
-
-        -- 2) ลองจาก ToolHandle (axe ถูก equip แล้ว)
-        local char = lp.Character
-        local th = char and char:FindFirstChild("ToolHandle")
-        local currentAxe = th and th:FindFirstChild("OriginalItem") and th.OriginalItem.Value
-        if currentAxe and currentAxe.Name == "Woodsman's Axe" then
-            return currentAxe
-        end
-
-        -- Retry delay (รอ server spawn axe)
-        if retry < 3 then
-            task.wait(0.5)
         end
     end
     return nil
