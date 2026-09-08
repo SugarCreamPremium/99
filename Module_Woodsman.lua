@@ -59,7 +59,8 @@ end
 -- Axe helpers
 -- ============================================
 function M.getAxe()
-    local inv = LocalPlayer:FindFirstChild("Inventory")
+    local lp = _G.LocalPlayer or game:GetService("Players").LocalPlayer
+    local inv = lp:FindFirstChild("Inventory")
     if not inv then return nil end
     for _, tool in ipairs(inv:GetChildren()) do
         if tool.Name == "Woodsman's Axe" then
