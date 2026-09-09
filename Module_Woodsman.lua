@@ -1,5 +1,5 @@
 -- ============================================
--- Module_Woodsman.lua / 5.59
+-- Module_Woodsman.lua / 6.03
 -- Woodsman class helpers + loops (โหลดผ่าน loadstring)
 -- GitHub: https://raw.githubusercontent.com/SugarCreamPremium/99/main/Module_Woodsman.lua
 --
@@ -218,7 +218,7 @@ function M.axeKillsLoop()
             end
 
             -- ลอยเหนือมอน 30 studs
-            local targetPos = root.Position + Vector3.new(0, 30, 0)
+            local targetPos = root.Position + Vector3.new(0, 10, 0)
             if not _G.floatAP or not _G.floatAP.Parent then
                 hrp.CFrame = CFrame.new(targetPos)
                 task.wait(0.2)
