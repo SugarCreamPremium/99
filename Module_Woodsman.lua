@@ -1,5 +1,5 @@
 -- ============================================
--- Module_Woodsman.lua
+-- Module_Woodsman.lua / 3.44
 -- Woodsman class helpers + loops (โหลดผ่าน loadstring)
 -- GitHub: https://raw.githubusercontent.com/SugarCreamPremium/99/main/Module_Woodsman.lua
 --
@@ -131,7 +131,8 @@ function M.equipAxe()
         warn("[Woodsman] Woodsman's Axe not in Inventory")
         return nil
     end
-    pcall(function() Client.InventoryHandler.RequestEquipItem(axe) end)
+    local clientInv = (_G.Client and _G.Client.InventoryHandler) or (Client and Client.InventoryHandler)
+    if clientInv then pcall(function() clientInv.RequestEquipItem(axe) end) end
     print("[Woodsman] equipAxe RequestEquipItem called on", axe.Name)
     for i = 1, 30 do
         task.wait(0.1)
