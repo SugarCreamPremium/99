@@ -59,35 +59,64 @@ end
 -- Axe helpers
 -- ============================================
 function M.getAxe()
-    -- ตรวจ axe ที่ถืออยู่ (ToolHandle) ก่อน — เพราะเมื่อ equip แล้ว axe จะไม่อยู่ใน Inventory อีก
     local lp = _G.LocalPlayer
     if not lp then
         local pl = game:GetService("Players")
         lp = pl.LocalPlayer or pl:WaitForChild("LocalPlayer")
     end
-    if lp then
-        local char = lp.Character
-        local th = char and char:FindFirstChild("ToolHandle")
-        local currentAxe = th and th:FindFirstChild("OriginalItem") and th.OriginalItem.Value
-        if currentAxe and currentAxe.Name == "Woodsman's Axe" then
-            return currentAxe
+    if not lp then return nil end
+
+    -- 1) Canonical equipped tool (preferred)
+    local okClient, Client = pcall(function() return require(lp.PlayerScripts:WaitForChild("Client")) end)
+    if okClient and Client and Client.InventoryHandler and Client.InventoryHandler.GetCurrentlyEquipped then
+        local cur = Client.InventoryHandler.GetCurrentlyEquipped()
+        if cur and ((cur.Name == "Woodsman's Axe") or (cur:GetAttribute("ToolName") == "GenericAxe")) then
+            return cur
         end
-        -- 2a) ลองจาก Inventory ด้วย attribute ToolName (เหมือน MainScript.lua)
-        local inv = lp:FindFirstChild("Inventory")
-        if inv then
-            for _, tool in ipairs(inv:GetChildren()) do
-                if tool:GetAttribute("ToolName") == "GenericAxe" then
-                    return tool
+    end
+
+    -- 2) ToolHandle / OriginalItem (may be different Name from model)
+    local char = lp.Character
+    if char then
+        local th = char:FindFirstChild("ToolHandle")
+        local val = th and th:FindFirstChild("OriginalItem") and th.OriginalItem.Value
+        if val and (val.Name == "Woodsman's Axe" or val:GetAttribute("ToolName") == "GenericAxe") then
+            return val
+        end
+    end
+
+    -- 3) Search Inventory direct + Data descendants (user says Data model holds axe)
+    local function findIn(parent)
+        if not parent then return nil end
+        for _, child in ipairs(parent:GetChildren()) do
+            if child:IsA("Instance") and (child.Name == "Woodsman's Axe" or child:GetAttribute("ToolName") == "GenericAxe") then
+                return child
+            end
+        end
+        -- recursive fallback for nested Data/Tool folders
+        for _, child in ipairs(parent:GetDescendants()) do
+            if child:IsA("Instance") and (child.Name == "Woodsman's Axe" or child:GetAttribute("ToolName") == "GenericAxe") then
+                -- only return if parent is Inventory or Data (not deep random templates)
+                local p = child.Parent
+                while p and p ~= lp do
+                    if p.Name == "Inventory" or p.Name == "Data" then
+                        return child
+                    end
+                    p = p.Parent
                 end
             end
         end
-        -- 2b) ลองชื่อ "Woodsman's Axe" เป็น fallback
-        if inv then
-            for _, tool in ipairs(inv:GetChildren()) do
-                if tool.Name == "Woodsman's Axe" then
-                    return tool
-                end
-            end
+        return nil
+    end
+
+    local inv = lp:FindFirstChild("Inventory")
+    local data = lp:FindFirstChild("Data")
+    local axe = findIn(inv) or findIn(data)
+    if axe then return axe end
+    -- final name-only fallback inside Inventory direct
+    if inv then
+        for _, tool in ipairs(inv:GetChildren()) do
+            if tool.Name == "Woodsman's Axe" then return tool end
         end
     end
     return nil
@@ -100,14 +129,13 @@ function M.equipAxe()
         return nil
     end
     pcall(function() Client.InventoryHandler.RequestEquipItem(axe) end)
-    for i = 1, 30 do  -- 3s timeout
+    for i = 1, 30 do
         task.wait(0.1)
         local char = LP.Character
         local th = char and char:FindFirstChild("ToolHandle")
-        if th and th:FindFirstChild("OriginalItem")
-            and th.OriginalItem.Value
-            and th.OriginalItem.Value.Name == "Woodsman's Axe" then
-            return th.OriginalItem.Value
+        local val = th and th:FindFirstChild("OriginalItem") and th.OriginalItem.Value
+        if val and (val.Name == "Woodsman's Axe" or val:GetAttribute("ToolName") == "GenericAxe" or (val.Name and val.Name:find("Axe"))) then
+            return val
         end
     end
     return nil
@@ -116,10 +144,9 @@ end
 function M.ensureEquipped()
     local char = LP.Character
     local th = char and char:FindFirstChild("ToolHandle")
-    local curAxe = th and th:FindFirstChild("OriginalItem")
-        and th.OriginalItem.Value
-    if curAxe and curAxe.Name == "Woodsman's Axe" then
-        return curAxe
+    local cur = th and th:FindFirstChild("OriginalItem") and th.OriginalItem.Value
+    if cur and (cur.Name == "Woodsman's Axe" or cur:GetAttribute("ToolName") == "GenericAxe") then
+        return cur
     end
     return M.equipAxe()
 end
