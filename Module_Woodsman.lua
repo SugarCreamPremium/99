@@ -1,5 +1,5 @@
 -- ============================================
--- Module_Woodsman.lua / 5.48
+-- Module_Woodsman.lua / 5.59
 -- Woodsman class helpers + loops (โหลดผ่าน loadstring)
 -- GitHub: https://raw.githubusercontent.com/SugarCreamPremium/99/main/Module_Woodsman.lua
 --
@@ -229,7 +229,7 @@ function M.axeKillsLoop()
             end
 
             -- kill: zero HP + InvokeServer
-            task.wait(1) -- รอ 1 วิให้ลดเลือดได้ก่อน
+            task.wait(1.5) -- รอ 1 วิให้ลดเลือดได้ก่อน
             pcall(_G.zeroEnemyHealth, monster)
             local ok, err = pcall(function()
                 local ev = (_G.Event and _G.Event or Event)
