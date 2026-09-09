@@ -1,5 +1,5 @@
 -- ============================================
--- Module_Woodsman.lua / 3.48
+-- Module_Woodsman.lua / 4.48
 -- Woodsman class helpers + loops (โหลดผ่าน loadstring)
 -- GitHub: https://raw.githubusercontent.com/SugarCreamPremium/99/main/Module_Woodsman.lua
 --
@@ -231,7 +231,8 @@ function M.axeKillsLoop()
             -- kill: zero HP + InvokeServer
             pcall(_G.zeroEnemyHealth, monster)
             local ok, err = pcall(function()
-                Event:InvokeServer(monster, axeRef, ownerId, hrp.CFrame, false)
+                local ev = (_G.Event and _G.Event or Event)
+                ev:InvokeServer(monster, axeRef, (_G.ownerId or ownerId), hrp.CFrame, false)
             end)
             if not ok then
                 warn("[Woodsman] InvokeServer error: " .. tostring(err))
@@ -345,9 +346,8 @@ function M.cutTreeLoop()
                     and LP.Character:FindFirstChild("HumanoidRootPart")
                 if not hrp then break end
 
-                local ok, err = pcall(function()
-                    Event:InvokeServer(tree, axeRef, ownerId, hrp.CFrame, false)
-                end)
+                local ev = (_G.Event and _G.Event or Event)
+                local ok, err = pcall(function() ev:InvokeServer(tree, axeRef, (_G.ownerId or ownerId), hrp.CFrame, false) end)
                 if not ok then
                     warn("[Woodsman] Tree hit error: " .. tostring(err))
                     break
