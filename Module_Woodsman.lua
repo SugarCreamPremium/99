@@ -112,7 +112,10 @@ function M.getAxe()
     local inv = lp:FindFirstChild("Inventory")
     local data = lp:FindFirstChild("Data")
     local axe = findIn(inv) or findIn(data)
-    if axe then return axe end
+    if axe then
+        print("[Woodsman] getAxe FOUND:", axe.Name, "attr="..tostring(axe:GetAttribute("ToolName")), "parent="..tostring(axe.Parent and axe.Parent.Name))
+        return axe
+    end
     -- final name-only fallback inside Inventory direct
     if inv then
         for _, tool in ipairs(inv:GetChildren()) do
@@ -129,15 +132,18 @@ function M.equipAxe()
         return nil
     end
     pcall(function() Client.InventoryHandler.RequestEquipItem(axe) end)
+    print("[Woodsman] equipAxe RequestEquipItem called on", axe.Name)
     for i = 1, 30 do
         task.wait(0.1)
         local char = LP.Character
         local th = char and char:FindFirstChild("ToolHandle")
         local val = th and th:FindFirstChild("OriginalItem") and th.OriginalItem.Value
         if val and (val.Name == "Woodsman's Axe" or val:GetAttribute("ToolName") == "GenericAxe" or (val.Name and val.Name:find("Axe"))) then
+            print("[Woodsman] equipAxe SUCCESS after", i*0.1, "s:", val.Name, "attr="..tostring(val:GetAttribute("ToolName")))
             return val
         end
     end
+    print("[Woodsman] equipAxe FAIL: never confirmed equipped after 3s")
     return nil
 end
 
@@ -169,9 +175,9 @@ function M.axeKillsLoop()
     if not M.isWoodsman then return "skip" end
     if M.isAxeKillsDone() then return "done" end
 
-    print("[Woodsman] Loop started")
-
+    print("[Woodsman] Loop started (axeKills)")
     local axe = M.equipAxe()
+    print("[Woodsman] axeKills axe result:", axe and axe.Name or "nil")
     if not axe then
         warn("[Woodsman] Woodsman's Axe not found in Inventory - cannot fight, will skip hits")
         return "impossible"
