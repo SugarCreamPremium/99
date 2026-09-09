@@ -1,5 +1,5 @@
 -- ============================================
--- Module_Woodsman.lua / 6.03
+-- Module_Woodsman.lua / 10.53
 -- Woodsman class helpers + loops (โหลดผ่าน loadstring)
 -- GitHub: https://raw.githubusercontent.com/SugarCreamPremium/99/main/Module_Woodsman.lua
 --
@@ -217,7 +217,7 @@ function M.axeKillsLoop()
                 return "impossible"
             end
 
-            -- ลอยเหนือมอน 30 studs
+            -- ลอยเหนือมอน 10 studs
             local targetPos = root.Position + Vector3.new(0, 10, 0)
             if not _G.floatAP or not _G.floatAP.Parent then
                 hrp.CFrame = CFrame.new(targetPos)
@@ -229,7 +229,7 @@ function M.axeKillsLoop()
             end
 
             -- kill: zero HP + InvokeServer
-            task.wait(1.5) -- รอ 1 วิให้ลดเลือดได้ก่อน
+            task.wait(1.5) -- รอ 1.5 วิให้ลดเลือดได้ก่อน
             pcall(_G.zeroEnemyHealth, monster)
             local ok, err = pcall(function()
                 local ev = (_G.Event and _G.Event or Event)
@@ -338,7 +338,9 @@ function M.cutTreeLoop()
             end
 
             local hitCount = 0
-            while tree.Parent and tree:IsDescendantOf(workspace.Map.Foliage)
+            local treeParent = tree.Parent
+            while tree.Parent == treeParent
+                and tree:IsDescendantOf(workspace.Map.Foliage)
                 and hitCount < 300 do
                 if M.isCutTreeDone() then break end
                 if _G.checkAnyCultistSpawned() then return "stronghold" end
