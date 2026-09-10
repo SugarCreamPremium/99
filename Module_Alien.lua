@@ -1,5 +1,5 @@
 -- ============================================
--- Module_Alien.lua / 10.10
+-- Module_Alien.lua / 10.39
 -- Complete Alien Scientist class implementation migrated from MainScript.lua.
 -- ============================================
 
@@ -53,6 +53,18 @@ local function isCharacterAlive()
     return humanoid and humanoid.Health > 0
 end
 
+local function warpBackToStronghold()
+    if not isCharacterAlive() then return end
+    local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    local returnPos = _G.finalGateBasePos or hrp.Position
+    for _ = 1, 3 do
+        hrp.CFrame = CFrame.new(returnPos + Vector3.new(0, 10, 0))
+            * CFrame.Angles(math.rad(-90), 0, 0)
+        task.wait(0.8)
+    end
+end
+
 local function cleanupCharacterFloating(character)
     local hrp = character and character:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
@@ -81,11 +93,7 @@ function M.nightLoop()
     print("[AlienScientist] Night loop started")
     if not Client or not Client.InventoryHandler or not dissolveRemote then
         warn("[AlienScientist] Shared dissolve dependencies are unavailable")
-        return
-    end
-
-    if not Client or not Client.InventoryHandler or not dissolveRemote then
-        warn("[AlienScientist] Shared dissolve dependencies are unavailable")
+        warpBackToStronghold()
         return
     end
 
@@ -398,11 +406,19 @@ end
 
 
 function M.runBackground()
-    task.spawn(M.nightLoop)
+    task.spawn(function()
+        M.nightLoop()
+        if isCharacterAlive() then
+            warpBackToStronghold()
+        end
+    end)
 end
 
 function M.resume()
     M.nightLoop()
+    if isCharacterAlive() then
+        warpBackToStronghold()
+    end
 end
 
 return M
