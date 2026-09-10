@@ -1,5 +1,5 @@
 -- ============================================
--- Module_Woodsman.lua / 10.10
+-- Module_Woodsman.lua / 10.39
 -- Class implementation.
 -- GitHub: https://raw.githubusercontent.com/SugarCreamPremium/99/main/Module_Woodsman.lua
 --
@@ -46,6 +46,19 @@ local function isCharacterAlive()
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
     return humanoid and humanoid.Health > 0
 end
+
+local function warpBackToStronghold()
+    if not isCharacterAlive() then return end
+    local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    local returnPos = _G.finalGateBasePos or hrp.Position
+    for _ = 1, 3 do
+        hrp.CFrame = CFrame.new(returnPos + Vector3.new(0, 10, 0))
+            * CFrame.Angles(math.rad(-90), 0, 0)
+        task.wait(0.8)
+    end
+end
+
 
 local function collectTrees()
     local trees = {}
@@ -239,6 +252,7 @@ function M.axeKillsLoop()
     local axe = M.equipAxe()
     if not axe then
         warn("[Woodsman] Woodsman's Axe not found in Inventory - cannot fight, will skip hits")
+        warpBackToStronghold()
         return "impossible"
     end
 
@@ -278,6 +292,7 @@ function M.axeKillsLoop()
             local axeRef = M.ensureEquipped()
             if not axeRef then
                 warn("[Woodsman] No Woodsman's Axe - skipping hit")
+                warpBackToStronghold()
                 return "impossible"
             end
 
@@ -317,8 +332,12 @@ function M.axeKillsLoop()
         end
     end
 
+    local done = M.isAxeKillsDone()
+    if not done then
+        warpBackToStronghold()
+    end
     print("[Woodsman] Loop ended")
-    return M.isAxeKillsDone() and "done" or "impossible"
+    return done and "done" or "impossible"
 end
 
 function M.cutTreeLoop()
@@ -330,6 +349,7 @@ function M.cutTreeLoop()
     local axe = M.equipAxe()
     if not axe then
         warn("[Woodsman] Woodsman's Axe not found in Inventory - cannot fight, will skip hits")
+        warpBackToStronghold()
         return "impossible"
     end
 
@@ -376,12 +396,14 @@ function M.cutTreeLoop()
                 and LP.Character:FindFirstChild("HumanoidRootPart")
             if not hrp then
                 warn("[Woodsman] No HumanoidRootPart - cannot warp, breaking")
+                warpBackToStronghold()
                 return "impossible"
             end
 
             local axeRef = M.ensureEquipped()
             if not axeRef then
                 warn("[Woodsman] Woodsman's Axe missing - cannot continue")
+                warpBackToStronghold()
                 return "impossible"
             end
 
@@ -436,8 +458,12 @@ function M.cutTreeLoop()
         end
     end
 
+    local done = M.isCutTreeDone()
+    if not done then
+        warpBackToStronghold()
+    end
     print("[Woodsman] Loop ended")
-    return M.isCutTreeDone() and "done" or "impossible"
+    return done and "done" or "impossible"
 end
 
 -- ============================================
@@ -446,10 +472,21 @@ end
 function M.runBackground()
     task.spawn(function()
         if not M.isAxeKillsDone() then
-            M.axeKillsLoop()
+            local result = M.axeKillsLoop()
+            if result ~= "done" then
+                if isCharacterAlive() then warpBackToStronghold() end
+                return
+            end
         end
-        if not M.isCutTreeDone() then
-            M.cutTreeLoop()
+        if isCharacterAlive() and not M.isCutTreeDone() then
+            local result = M.cutTreeLoop()
+            if result ~= "done" then
+                if isCharacterAlive() then warpBackToStronghold() end
+                return
+            end
+        end
+        if isCharacterAlive() and not M.isAllQuestDone() then
+            warpBackToStronghold()
         end
     end)
 end
@@ -457,5 +494,6 @@ end
 function M.resume()
     M.runBackground()
 end
+
 
 return M
