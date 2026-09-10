@@ -1,5 +1,5 @@
 -- ============================================
--- Module_Vampire.lua / 10.10
+-- Module_Vampire.lua / 10.39
 -- Complete Vampire class implementation migrated from MainScript.lua.
 -- ============================================
 
@@ -33,6 +33,18 @@ local function isCharacterAlive()
     local character = LP.Character
     local humanoid = getHumanoid(character)
     return humanoid and humanoid.Health > 0
+end
+
+local function warpBackToStronghold()
+    if not isCharacterAlive() then return end
+    local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    local returnPos = _G.finalGateBasePos or hrp.Position
+    for _ = 1, 3 do
+        hrp.CFrame = CFrame.new(returnPos + Vector3.new(0, 10, 0))
+            * CFrame.Angles(math.rad(-90), 0, 0)
+        task.wait(0.8)
+    end
 end
 
 M.isVampire = (_G.__WSM_currentClass or "Unknown") == "Vampire"
@@ -467,12 +479,9 @@ function M.nightLoop()
         task.wait(1)
     end
 
-    -- วาร์ปกลับ combatCenter
-    local hrp = LP.Character
-        and LP.Character:FindFirstChild("HumanoidRootPart")
-    if hrp then
-        hrp.CFrame = CFrame.new(combatCenter + Vector3.new(0, HOVER_HEIGHT, 0))
-            * CFrame.Angles(math.rad(-90), 0, 0)
+    disableFloating()
+    if isCharacterAlive() and not M.isAllQuestDone() then
+        warpBackToStronghold()
     end
     print("[Vampire] Night loop ended, at Stronghold")
 end
@@ -500,6 +509,9 @@ end
 
 function M.resume()
     M.nightLoop()
+    if isCharacterAlive() then
+        warpBackToStronghold()
+    end
 end
 
 return M
