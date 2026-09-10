@@ -1,5 +1,5 @@
 -- ============================================
--- Module_BGH.lua / 10.10
+-- Module_BGH.lua / 10.39
 -- Complete Big Game Hunter implementation migrated from MainScript.lua.
 -- ============================================
 
@@ -826,17 +826,28 @@ function M.nightLoop()
         if not runBGHIteration() then break end
     end
 
-    disableFloating()  -- safety cleanup
+    disableFloating()
+    if isCharacterAlive() and not BGH.isBigGameHunterAllQuestDone() then
+        warpBackToStronghold()
+    end
 end
 
 -- ============================================
 
 function M.runBackground()
-    task.spawn(M.nightLoop)
+    task.spawn(function()
+        M.nightLoop()
+        if isCharacterAlive() then
+            warpBackToStronghold()
+        end
+    end)
 end
 
 function M.resume()
     M.nightLoop()
+    if isCharacterAlive() then
+        warpBackToStronghold()
+    end
 end
 
 return M
