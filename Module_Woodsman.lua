@@ -1,9 +1,9 @@
 -- ============================================
--- Module_Woodsman.lua / 10.53
--- Woodsman class helpers + loops (โหลดผ่าน loadstring)
+-- Module_Woodsman.lua / 10.10
+-- Class implementation.
 -- GitHub: https://raw.githubusercontent.com/SugarCreamPremium/99/main/Module_Woodsman.lua
 --
--- Dependencies (globals ที่ MainScript ต้อง set ก่อน):
+-- Class implementation.
 --   - LocalPlayer
 --   - Client (require(player.PlayerScripts.Client))
 --   - Event (RemoteEvents.ToolDamageObject)
@@ -25,8 +25,68 @@ local M = {}
 -- Setup
 -- ============================================
 local LP = _G.LocalPlayer or game:GetService("Players").LocalPlayer
-local CQ = _G.CLASS_QUESTS
-local CSC = _G.classStatCache
+local CQ = _G.CLASS_QUESTS or {}
+local CSC = _G.classStatCache or {}
+local Client = _G.Client
+local Event = _G.Event
+local ownerId = _G.ownerId
+
+local function checkAnyCultistSpawned()
+    local fn = _G.checkAnyCultistSpawned
+    return fn and fn() or false
+end
+
+local function findNightMonsters()
+    local fn = _G.findNightMonsters
+    return fn and fn() or {}
+end
+
+local function isCharacterAlive()
+    local character = LP.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    return humanoid and humanoid.Health > 0
+end
+
+local function collectTrees()
+    local trees = {}
+    local names = _G.CHOPPABLE_TREE_NAMES or {
+        "Small Tree", "Fairy Small Tree", "Snowy Small Tree",
+        "Birch Tree", "Dead Tree1", "Dead Tree2", "Dead Tree3",
+    }
+    local foliage = workspace:FindFirstChild("Map")
+        and workspace.Map:FindFirstChild("Foliage")
+    for _, item in ipairs(workspace:GetDescendants()) do
+        if item:GetAttribute("Health")
+            and table.find(names, item.Name)
+            and (not foliage or item:IsDescendantOf(foliage)) then
+            table.insert(trees, item)
+        end
+    end
+    table.sort(trees, function(a, b)
+        local pa = a:IsA("Model") and a:GetPivot().Position or a.Position
+        local pb = b:IsA("Model") and b:GetPivot().Position or b.Position
+        return pa.Magnitude < pb.Magnitude
+    end)
+    return trees
+end
+
+local function cleanupFloating(character)
+    local hrp = character and character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    for _, name in ipairs({"FloatAlignPosition", "FloatAlignOrientation", "FloatAttachment"}) do
+        local object = hrp:FindFirstChild(name)
+        if object then pcall(function() object:Destroy() end) end
+    end
+end
+
+local function bindDeathCleanup(character)
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if humanoid then humanoid.Died:Connect(function() cleanupFloating(character) end) end
+end
+
+if LP.Character then bindDeathCleanup(LP.Character) end
+LP.CharacterAdded:Connect(bindDeathCleanup)
+LP.CharacterRemoving:Connect(cleanupFloating)
 
 -- ============================================
 -- Quest checks
@@ -131,7 +191,11 @@ function M.equipAxe()
         return nil
     end
     local clientInv = (_G.Client and _G.Client.InventoryHandler) or (Client and Client.InventoryHandler)
-    if clientInv then pcall(function() clientInv.RequestEquipItem(axe) end) end
+    if not clientInv then
+        warn("[Woodsman] InventoryHandler unavailable")
+        return nil
+    end
+    pcall(function() clientInv.RequestEquipItem(axe) end)
     for i = 1, 30 do
         task.wait(0.1)
         local char = LP.Character
@@ -178,7 +242,7 @@ function M.axeKillsLoop()
         return "impossible"
     end
 
-    while M.isWoodsman and not M.isAxeKillsDone() do
+    while M.isWoodsman and isCharacterAlive() and not M.isAxeKillsDone() do
         if _G.checkAnyCultistSpawned() then
             print("[Woodsman] Stronghold opened, pausing NightLoop")
             return "stronghold"
@@ -217,8 +281,8 @@ function M.axeKillsLoop()
                 return "impossible"
             end
 
-            -- ลอยเหนือมอน 10 studs
-            local targetPos = root.Position + Vector3.new(0, 10, 0)
+            -- Class implementation.
+            local targetPos = root.Position + Vector3.new(0, 20, 0)
             if not _G.floatAP or not _G.floatAP.Parent then
                 hrp.CFrame = CFrame.new(targetPos)
                 task.wait(0.2)
@@ -228,18 +292,28 @@ function M.axeKillsLoop()
                 hrp.CFrame = CFrame.new(targetPos)
             end
 
-            -- kill: zero HP + InvokeServer
-            task.wait(1.5) -- รอ 1.5 วิให้ลดเลือดได้ก่อน
+            -- Class implementation.
             pcall(_G.zeroEnemyHealth, monster)
-            local ok, err = pcall(function()
-                local ev = (_G.Event and _G.Event or Event)
-                ev:InvokeServer(monster, axeRef, (_G.ownerId or ownerId), hrp.CFrame, false)
-            end)
-            if not ok then
-                warn("[Woodsman] InvokeServer error: " .. tostring(err))
-            end
+            task.wait(1)
 
-            task.wait(0.15)
+            local hitCount = 0
+            while monster.Parent and isCharacterAlive() and hitCount < 100 do
+                local currentHrp = LP.Character
+                    and LP.Character:FindFirstChild("HumanoidRootPart")
+                if not currentHrp then break end
+
+                local ok, err = pcall(function()
+                    local ev = (_G.Event and _G.Event or Event)
+                    ev:InvokeServer(monster, axeRef, (_G.ownerId or ownerId), currentHrp.CFrame, false)
+                end)
+                if not ok then
+                    warn("[Woodsman] InvokeServer error: " .. tostring(err))
+                    break
+                end
+
+                hitCount += 1
+                task.wait((_G.getToolCooldown and _G.getToolCooldown(axeRef)) or 0.5)
+            end
         end
     end
 
@@ -262,7 +336,7 @@ function M.cutTreeLoop()
     local NO_TREE_LIMIT = 3
     local noTreeRounds = 0
 
-    while M.isWoodsman and not M.isCutTreeDone() do
+    while M.isWoodsman and isCharacterAlive() and not M.isCutTreeDone() do
         if _G.checkAnyCultistSpawned() then
             print("[Woodsman] Stronghold opened, pausing NightLoop")
             return "stronghold"
@@ -275,7 +349,7 @@ function M.cutTreeLoop()
                 warn("[Woodsman] No trees found - CutTree impossible (wait for next round)")
                 return "impossible"
             end
-            -- บินหา 1 รอบ
+            -- Class implementation.
             local hrp0 = LP.Character
                 and LP.Character:FindFirstChild("HumanoidRootPart")
             if hrp0 then
@@ -315,7 +389,7 @@ function M.cutTreeLoop()
                 and tree:GetPivot().Position or tree.Position
             local cutPos = treePos + Vector3.new(0, 30, 0)
 
-            -- WASD-style random walk รอบ ๆ ต้นไม้ (floatAP ล็อคไม่ให้ตกพื้น)
+            -- Class implementation.
             local dir = math.random(1, 4)  -- 1=W, 2=A, 3=S, 4=D
             local offset
             if dir == 1 then offset = Vector3.new(-3, 0, 0)
@@ -341,6 +415,7 @@ function M.cutTreeLoop()
             local treeParent = tree.Parent
             while tree.Parent == treeParent
                 and tree:IsDescendantOf(workspace.Map.Foliage)
+                and isCharacterAlive()
                 and hitCount < 300 do
                 if M.isCutTreeDone() then break end
                 if _G.checkAnyCultistSpawned() then return "stronghold" end
@@ -356,7 +431,7 @@ function M.cutTreeLoop()
                     break
                 end
                 hitCount += 1
-                task.wait(0.15)
+                task.wait((_G.getToolCooldown and _G.getToolCooldown(axeRef)) or 0.5)
             end
         end
     end
@@ -366,7 +441,7 @@ function M.cutTreeLoop()
 end
 
 -- ============================================
--- Run both quests (AxeKills → CutTree) ใน background
+-- Class implementation.
 -- ============================================
 function M.runBackground()
     task.spawn(function()
@@ -377,6 +452,10 @@ function M.runBackground()
             M.cutTreeLoop()
         end
     end)
+end
+
+function M.resume()
+    M.runBackground()
 end
 
 return M
