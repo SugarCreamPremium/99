@@ -1,5 +1,5 @@
 -- ============================================
--- Module_Woodsman.lua / 9.04
+-- Module_Woodsman.lua / 9.27
 -- Class implementation.
 -- GitHub: https://raw.githubusercontent.com/SugarCreamPremium/99/main/Module_Woodsman.lua
 --
@@ -237,7 +237,7 @@ end
 function M.waitForMonsters(maxWait)
     local waited = 0
     while waited < maxWait do
-        local list = findNightMonsters()
+        local list = _G.findNightMonsters()
         if #list > 0 then return true end
         task.wait(0.5)
         waited += 0.5
@@ -262,7 +262,7 @@ function M.axeKillsLoop()
             return "stronghold"
         end
 
-        local findOk, monsters = pcall(findNightMonsters)
+        local findOk, monsters = pcall(_G.findNightMonsters)
         if not findOk then
             warn("[Woodsman] findNightMonsters error: " .. tostring(monsters))
             task.wait(1)
