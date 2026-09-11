@@ -1,5 +1,5 @@
 -- ============================================
--- Module_Woodsman.lua / 9.27
+-- Module_Woodsman.lua / 10.21
 -- Class implementation.
 -- GitHub: https://raw.githubusercontent.com/SugarCreamPremium/99/main/Module_Woodsman.lua
 --
@@ -45,6 +45,10 @@ local function isCharacterAlive()
     local character = LP.Character
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
     return humanoid and humanoid.Health > 0
+end
+
+local function isAttackableModel(model)
+    return model and model.Parent and model:GetAttribute("NotAttackable") ~= true
 end
 
 local function warpBackToStronghold()
@@ -281,7 +285,7 @@ function M.axeKillsLoop()
         for _, monster in ipairs(monsters) do
             if M.isAxeKillsDone() then break end
             if checkAnyCultistSpawned() then return "stronghold" end
-            if not (monster and monster.Parent) then continue end
+            if not isAttackableModel(monster) then continue end
 
             local hrp = LP.Character
                 and LP.Character:FindFirstChild("HumanoidRootPart")
@@ -312,7 +316,8 @@ function M.axeKillsLoop()
             task.wait(1)
 
             local hitCount = 0
-            while monster.Parent and isCharacterAlive() and hitCount < 200 do
+            while monster.Parent
+                and isCharacterAlive() and hitCount < 200 do
                 local currentHrp = LP.Character
                     and LP.Character:FindFirstChild("HumanoidRootPart")
                 if not currentHrp then break end
