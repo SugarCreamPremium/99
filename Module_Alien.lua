@@ -1,5 +1,5 @@
 -- ============================================
--- Module_Alien.lua / 10.39
+-- Module_Alien.lua / 10.21
 -- Complete Alien Scientist class implementation migrated from MainScript.lua.
 -- ============================================
 
@@ -51,6 +51,10 @@ local function isCharacterAlive()
     local character = LP.Character
     local humanoid = getHumanoid(character)
     return humanoid and humanoid.Health > 0
+end
+
+local function isAttackableModel(model)
+    return model and model.Parent and model:GetAttribute("NotAttackable") ~= true
 end
 
 local function warpBackToStronghold()
@@ -307,14 +311,15 @@ function M.nightLoop()
             end
 
             -- Skip Bunny / Bee / Cultist* (ไม่ dissolve — ไม่ใช่เป้าหมาย)
-            local skipDissolve = (monster.Name == "Bunny")
+            local skipDissolve = not isAttackableModel(monster)
+                or (monster.Name == "Bunny")
                 or (monster.Name == "Bee")
                 or string.find(monster.Name, "Cultist", 1, true)
             if skipDissolve then
                 continue
             end
 
-            if not (monster and monster.Parent) then
+            if not isAttackableModel(monster) then
                 continue
             end
             local hrp = LP.Character
