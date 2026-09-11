@@ -1,5 +1,5 @@
 -- ============================================
--- Module_Vampire.lua / 9.04
+-- Module_Vampire.lua / 10.21
 -- Complete Vampire class implementation migrated from MainScript.lua.
 -- ============================================
 
@@ -33,6 +33,10 @@ local function isCharacterAlive()
     local character = LP.Character
     local humanoid = getHumanoid(character)
     return humanoid and humanoid.Health > 0
+end
+
+local function isAttackableModel(model)
+    return model and model.Parent and model:GetAttribute("NotAttackable") ~= true
 end
 
 local function warpBackToStronghold()
@@ -347,7 +351,7 @@ function M.nightLoop()
         -- ตีทีละตัว: ตีซ้ำตัวเดียวจนกว่าจะตาย หรือครบ 100 ที → เปลี่ยนตัว
         local MAX_HITS_PER_TARGET = 10
         for monsterIdx, monster in ipairs(monsters) do
-            if not (monster and monster.Parent) then
+            if not isAttackableModel(monster) then
                 -- (quiet - ไม่ print "Monster already destroyed")
                 continue
             end
@@ -393,7 +397,8 @@ function M.nightLoop()
 
             -- ตีซ้ำตัวเดิมจนกว่าจะตาย หรือครบ 100 ที
             local hitCount = 0
-            while monster and monster.Parent and isCharacterAlive() and hitCount < MAX_HITS_PER_TARGET do
+            while monster and monster.Parent
+                and isCharacterAlive() and hitCount < MAX_HITS_PER_TARGET do
                 -- ลด HP ตัวเองเหลือ 1 (ทุกตี — ต้องทำ Lifesteal)
                 local hpOk, hpErr = pcall(M.keepHPOne)
                 if not hpOk then
