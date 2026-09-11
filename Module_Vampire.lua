@@ -1,5 +1,5 @@
 -- ============================================
--- Module_Vampire.lua / 10.39
+-- Module_Vampire.lua / 9.04
 -- Complete Vampire class implementation migrated from MainScript.lua.
 -- ============================================
 
@@ -471,7 +471,7 @@ function M.nightLoop()
                     break  -- ครบ 100 → เปลี่ยนตัว
                 end
 
-                task.wait(getToolCooldown(vampireScythe))
+                task.wait(0.1)
             end
         end
 
