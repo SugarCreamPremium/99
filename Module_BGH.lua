@@ -1,5 +1,5 @@
 -- ============================================
--- Module_BGH.lua / 10.39
+-- Module_BGH.lua / 10.21
 -- Complete Big Game Hunter implementation migrated from MainScript.lua.
 -- ============================================
 
@@ -19,6 +19,10 @@ local function isCharacterAlive()
     local character = LP.Character
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
     return humanoid and humanoid.Health > 0
+end
+
+local function isAttackableModel(model)
+    return model and model.Parent and model:GetAttribute("NotAttackable") ~= true
 end
 local function updateStatus(...) local fn = _G.updateStatus; if fn then return fn(...) end end
 local function checkAnyCultistSpawned()
@@ -192,8 +196,10 @@ BGH.findMonsters = function()
     local activeMonsters = BGH.getActivePeltTypes()
 
     for _, model in ipairs(chars:GetChildren()) do
-        if (_G.shouldSkipName and not _G.shouldSkipName(model.Name)) or (not _G.shouldSkipName and true) then
-            if model:GetAttribute("StrongholdEnemy") ~= true then
+        if isAttackableModel(model)
+            and ((_G.shouldSkipName and not _G.shouldSkipName(model.Name)) or (not _G.shouldSkipName and true)) then
+            if model:GetAttribute("StrongholdEnemy") ~= true
+                and model:GetAttribute("NotAttackable") ~= true then
                 local hum = model:FindFirstChildOfClass("Humanoid")
                     or model:FindFirstChildWhichIsA("Humanoid", true)
                 if hum and hum.Parent and hum.Health > 0 then
@@ -593,7 +599,8 @@ function M.nightLoop()
                             if not chars then return end
                             for _, model in ipairs(chars:GetChildren()) do
                                 if (_G.shouldSkipName and not _G.shouldSkipName(model.Name)) or (not _G.shouldSkipName and true) then
-                                    if model:GetAttribute("StrongholdEnemy") ~= true then
+                                    if model:GetAttribute("StrongholdEnemy") ~= true
+                                        and model:GetAttribute("NotAttackable") ~= true then
                                         local hum = model:FindFirstChildOfClass("Humanoid")
                                             or model:FindFirstChildWhichIsA("Humanoid", true)
                                         if hum and hum.Parent and hum.Health > 0 then
@@ -619,7 +626,7 @@ function M.nightLoop()
                                     disableFloating()
                                     return false
                                 end
-                                if not (otherMonster and otherMonster.Parent) then continue end
+                                if not (otherMonster and otherMonster.Parent) or otherMonster:GetAttribute("NotAttackable") == true then continue end
                                 local otherRoot = otherMonster:FindFirstChild("HumanoidRootPart")
                                     or otherMonster.PrimaryPart
                                 if not otherRoot then continue end
@@ -655,11 +662,11 @@ function M.nightLoop()
                                         return false
                                     end
                                     pcall(zeroEnemyHealth, otherMonster)
-                                    task.wait(0.5)
+                                    task.wait(1)
                                     pcall(function()
                                         Event:InvokeServer(otherMonster, axe, ownerId, hrp2.CFrame, false)
                                     end)
-                                    task.wait(0.2)
+                                    task.wait(0.1)
                                 end
                                 if not (otherMonster and otherMonster.Parent) then
                                     BGH.consumePeltsNear(otherRoot.Position, PELT_SEARCH_RADIUS)
@@ -698,7 +705,7 @@ function M.nightLoop()
                 end
             end
 
-            if not (monster and monster.Parent) then continue end
+            if not (monster and monster.Parent) or monster:GetAttribute("NotAttackable") == true then continue end
             local hrp = LP.Character
                 and LP.Character:FindFirstChild("HumanoidRootPart")
             if not hrp then
@@ -755,7 +762,7 @@ function M.nightLoop()
             pcall(function()
                 Event:InvokeServer(monster, axe, ownerId, hrp.CFrame, false)
             end)
-            task.wait(getToolCooldown(axe))
+            task.wait(0.1)
 
             -- ตีซ้ำจนกว่าจะตาย (ไม่มี cap — recheck ทุก hit)
             -- Protection: ถ้าตี 5 ครั้งติด HP ไม่ลด → เปลี่ยนตัว (กันตีค้าง)
@@ -787,7 +794,7 @@ function M.nightLoop()
                 pcall(function()
                     Event:InvokeServer(monster, axe, ownerId, hrp.CFrame, false)
                 end)
-                task.wait(getToolCooldown(axe))
+                task.wait(0.1)
 
                 -- เช็ค HP หลังตี
                 if monster and monster.Parent and humBefore then
