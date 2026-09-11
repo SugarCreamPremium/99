@@ -1,5 +1,5 @@
 -- ============================================
--- Module_Woodsman.lua / 10.39
+-- Module_Woodsman.lua / 9.04
 -- Class implementation.
 -- GitHub: https://raw.githubusercontent.com/SugarCreamPremium/99/main/Module_Woodsman.lua
 --
@@ -312,7 +312,7 @@ function M.axeKillsLoop()
             task.wait(1)
 
             local hitCount = 0
-            while monster.Parent and isCharacterAlive() and hitCount < 100 do
+            while monster.Parent and isCharacterAlive() and hitCount < 200 do
                 local currentHrp = LP.Character
                     and LP.Character:FindFirstChild("HumanoidRootPart")
                 if not currentHrp then break end
@@ -327,15 +327,13 @@ function M.axeKillsLoop()
                 end
 
                 hitCount += 1
-                task.wait((_G.getToolCooldown and _G.getToolCooldown(axeRef)) or 0.5)
+                task.wait(0.1)
             end
         end
     end
 
     local done = M.isAxeKillsDone()
-    if not done then
-        warpBackToStronghold()
-    end
+    warpBackToStronghold()
     print("[Woodsman] Loop ended")
     return done and "done" or "impossible"
 end
@@ -438,7 +436,7 @@ function M.cutTreeLoop()
             while tree.Parent == treeParent
                 and tree:IsDescendantOf(workspace.Map.Foliage)
                 and isCharacterAlive()
-                and hitCount < 300 do
+                and hitCount < 200 do
                 if M.isCutTreeDone() then break end
                 if _G.checkAnyCultistSpawned() then return "stronghold" end
 
@@ -453,15 +451,13 @@ function M.cutTreeLoop()
                     break
                 end
                 hitCount += 1
-                task.wait((_G.getToolCooldown and _G.getToolCooldown(axeRef)) or 0.5)
+                task.wait(0.1)
             end
         end
     end
 
     local done = M.isCutTreeDone()
-    if not done then
-        warpBackToStronghold()
-    end
+    warpBackToStronghold()
     print("[Woodsman] Loop ended")
     return done and "done" or "impossible"
 end
@@ -485,7 +481,7 @@ function M.runBackground()
                 return
             end
         end
-        if isCharacterAlive() and not M.isAllQuestDone() then
+        if isCharacterAlive() then
             warpBackToStronghold()
         end
     end)
