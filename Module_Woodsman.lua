@@ -33,17 +33,12 @@ local ownerId = _G.ownerId
 
 local function checkAnyCultistSpawned()
     local fn = _G.checkAnyCultistSpawned
-    return type(fn) == "function" and fn() or false
+    return fn and fn() or false
 end
 
 local function findNightMonsters()
     local fn = _G.findNightMonsters
-    return type(fn) == "function" and fn() or {}
-end
-
-local function ensureFloating(targetPos)
-    local fn = _G.ensureFloating
-    if type(fn) == "function" then fn(targetPos) end
+    return fn and fn() or {}
 end
 
 local function isCharacterAlive()
@@ -306,16 +301,14 @@ function M.axeKillsLoop()
             if not _G.floatAP or not _G.floatAP.Parent then
                 hrp.CFrame = CFrame.new(targetPos)
                 task.wait(0.2)
-                ensureFloating(targetPos)
+                _G.ensureFloating(targetPos)
             else
                 _G.floatAP.Position = targetPos
                 hrp.CFrame = CFrame.new(targetPos)
             end
 
             -- Class implementation.
-            if type(_G.zeroEnemyHealth) == "function" then
-                pcall(_G.zeroEnemyHealth, monster)
-            end
+            pcall(_G.zeroEnemyHealth, monster)
             task.wait(1)
 
             local hitCount = 0
@@ -432,7 +425,7 @@ function M.cutTreeLoop()
 
             if not _G.floatAP or not _G.floatAP.Parent then
                 task.wait(0.2)
-                ensureFloating(walkPos)
+                _G.ensureFloating(walkPos)
             else
                 _G.floatAP.Position = walkPos
                 hrp.CFrame = CFrame.new(walkPos)
