@@ -1,5 +1,5 @@
 -- ============================================
--- Module_Stronghold.lua / 9.39
+-- Module_Stronghold.lua / 9.13
 -- Stronghold fight, chest, round, and reset flow.
 -- ============================================
 
@@ -850,10 +850,19 @@ end
 print(string.format("✅ Day %d reached - resetting!", getCurrentDay()))
 updateStatus("✅ Done! Resetting...")
 task.wait(0.3)
-pcall(function()
-    -- ฆ่าตัวเองจบรอบ - ปล่อยให้ Death Watcher จับแล้วกดเล่นใหม่ต่อได้เลย (จบรอบ = เริ่มรอบใหม่)
-    LocalPlayer.Character:BreakJoints()
-end)
+-- ฆ่าตัวเองจบรอบ แล้วปล่อยให้ Death Watcher ใน MainScript ทำต่อ
+-- (ไม่วาร์ปเอง - เกมพาไป Lobby ให้เองหลัง Death Watcher กด Play Again)
+-- ตั้ง Health = 0 ไม่ใช่ BreakJoints: Death Watcher เช็ค hum.Health <= 0 ตรง ๆ (isDeadNow)
+-- และตัวละครไม่ถูกหักข้อจนเหลือแต่ก้นโต๊ะ
+local char = LocalPlayer.Character
+if char then
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        hum.Health = 0
+    else
+        pcall(function() char:BreakJoints() end)
+    end
+end
 
 end
 
