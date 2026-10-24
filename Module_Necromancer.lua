@@ -35,6 +35,31 @@ local function findNightMonsters()
     return fn and fn() or {}
 end
 
+-- Stronghold: OpenTime คือเวลาเปิดรอบถัดไป (วินาที server)
+local function strongholdOpenTime()
+    for _, sh in ipairs(CollectionService:GetTagged("Stronghold")) do
+        if sh.Name ~= "AlienMothership" then
+            local f = sh:FindFirstChild("Functional")
+            local openTime = f and f:GetAttribute("OpenTime")
+            if openTime then return openTime end
+        end
+    end
+    return nil
+end
+
+-- Stronghold เปิด/กำลังตี = ห้ามฟาร์ม pet ต้องเคลียร์ Stronghold ให้จบก่อน
+-- latch: เริ่มรอบเมื่อ OpenTime เปลี่ยน -> busy จนจบรอบ (OpenTime ถูกตั้งใหม่เมื่อเคลียร์รอบ)
+local openCycle, busy = nil, false
+local function strongholdBusy()
+    local openTime = strongholdOpenTime()
+    if openTime ~= openCycle then
+        openCycle = openTime
+        busy = openTime ~= nil and workspace:GetServerTimeNow() >= openTime
+    end
+    if checkAnyCultistSpawned() then busy = true end
+    return busy
+end
+
 local function isCharacterAlive()
     local character = LP.Character
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -51,6 +76,22 @@ local function warpBackToStronghold()
             * CFrame.Angles(math.rad(-90), 0, 0)
         task.wait(0.8)
     end
+end
+
+-- pet ที่ยังมีชีวิต: โมเดล pet มี Humanoid เป็น child ชื่อ "NPC" (EnemyHandler อ่านแบบนี้)
+local function petAliveCount()
+    local alive = 0
+    for _, model in ipairs(CollectionService:GetTagged("TamedAnimal_" .. LP.UserId)) do
+        if model.Parent and model:GetAttribute("Dead") ~= true then
+            local npc = model:FindFirstChild("NPC")
+            local hum = (npc and npc:IsA("Humanoid") and npc)
+                or model:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health > 0 then
+                alive = alive + 1
+            end
+        end
+    end
+    return alive
 end
 
 -- ============================================
@@ -86,7 +127,7 @@ end
 -- ============================================
 -- Remotes
 -- ============================================
-local ClaimSoul, Resurrect, CommandPet, UpdatePets
+local ClaimSoul, Resurrect, CommandPet, UpdatePets, SummonAllPets
 
 -- optional remotes: ถ้าไม่มีก็ข้าม (ไม่ทำให้ loop ตาย)
 local function findRemote(remotes, name)
@@ -104,6 +145,7 @@ local function resolveRemotes()
     Resurrect = findRemote(remotes, "RequestResurrectCultist")
     CommandPet = findRemote(remotes, "CommandPet")
     UpdatePets = findRemote(remotes, "UpdateOwnedPets")
+    SummonAllPets = findRemote(remotes, "RequestSummonAllPets")
     return ClaimSoul ~= nil and Resurrect ~= nil
 end
 
@@ -230,7 +272,8 @@ local function tryResurrect()
         if (LP:GetAttribute("CurrentPets") or 0) >= maxPets then return end
     end
 
-    if resurrectWarpMode and isCharacterAlive() then
+    -- วาร์ปไปชุบเฉพาะตอน Stronghold ไม่ได้ตีอยู่ (ระหว่างตี Stronghold loop คุมตำแหน่งตัวอยู่)
+    if resurrectWarpMode and not strongholdBusy() and isCharacterAlive() then
         local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
         local root = corpseRoot(corpse)
         if hrp and root then
@@ -266,6 +309,17 @@ end
 local petBusy = false
 local PET_SESSION_TIMEOUT = 30   -- วิ ต่อมอน 1 ตัว
 local PET_NO_DAMAGE_LIMIT = 10   -- วิ ที่เลือดไม่ลด = pet ตีไม่ติด -> ตีใหม่
+local PET_SUMMON_COOLDOWN = 5    -- วิ กันยิง RequestSummonAllPets รัวเกิน
+local lastPetSummon = 0
+
+-- pet ไม่วาร์ปตามทันที -> ต้องเรียกกลับมาหาตัวก่อนตีทุกครั้ง
+local function summonPets()
+    if not SummonAllPets then return end
+    if os.clock() - lastPetSummon < PET_SUMMON_COOLDOWN then return end
+    lastPetSummon = os.clock()
+    pcall(function() SummonAllPets:FireServer() end)
+    task.wait(2.5)  -- ให้ pet เดินมาถึงก่อนเริ่มตี
+end
 
 local function monsterHP(model)
     local hum = model:FindFirstChildOfClass("Humanoid")
@@ -322,12 +376,23 @@ local function petDamageSession()
     task.wait(0.3)
     ensureFloating()
 
+    -- วาร์ปไปถึงมอนก่อน แล้วเรียก pet ให้ตามมา (1 ครั้งต่อ 1 มอน)
+    local hrp0 = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+    if hrp0 then
+        hrp0.CFrame = CFrame.new(root.Position + Vector3.new(0, 10, 0))
+            * CFrame.Angles(math.rad(-90), 0, 0)
+    end
+    summonPets()
+
     local deadline = os.clock() + PET_SESSION_TIMEOUT
     local lastDropAt = os.clock()
     local lastHit = 0
 
     while os.clock() < deadline and monster.Parent and isCharacterAlive() do
-        if checkAnyCultistSpawned() then break end
+        -- Stronghold เปิด/มี Cultist = เลิกตีมอนทันที ไปเคลียร์ Stronghold ก่อน
+        if strongholdBusy() then break end
+        -- pet ตายหมด = ตีต่อไม่ได้ดาเมจให้ pet แล้ว จบ session ไปวาร์ปกลับ
+        if petAliveCount() == 0 then break end
 
         local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
         local r = monster:FindFirstChild("HumanoidRootPart") or monster.PrimaryPart
@@ -347,22 +412,32 @@ local function petDamageSession()
             lastHP = hp
             lastDropAt = os.clock()
         elseif os.clock() - lastDropAt > PET_NO_DAMAGE_LIMIT then
-            -- เลือดไม่ลดเลย = pet ตีไม่ติด -> ตีใหม่อีกรอบ
+            -- เลือดไม่ลดเลย = pet ตีไม่ติด -> ตีใหม่อีกรอบ + เรียก pet กลับมา
             local w = getMeleeWeapon() or weapon
             pcall(function() Client.InventoryHandler.RequestEquipItem(w) end)
             task.wait(0.3)
+            summonPets()
             lastDropAt = os.clock()
         end
 
         task.wait(0.5)
     end
     stopFloating()
+
+    -- pet ตายหมดระหว่างตี = ไม่มีอะไรทำต่อ กลับไปรอที่ Stronghold
+    -- (Stronghold เปิดอยู่ = Stronghold loop วาร์ปเองอยู่แล้ว ไม่ต้องแย่งวาร์ป)
+    if not strongholdBusy() and petAliveCount() == 0 then
+        print("[Necromancer] All pets dead - returning to Stronghold")
+        warpBackToStronghold()
+    end
 end
 
 local function petDamageIdle()
     if petBusy then return end
-    if checkAnyCultistSpawned() then return end
+    -- Stronghold เปิด/กำลังตี = ห้ามออกไปตีมอน ให้เคลียร์ Stronghold ก่อน
+    if strongholdBusy() then return end
     if (LP:GetAttribute("CurrentPets") or 0) == 0 then return end
+    if petAliveCount() == 0 then return end
     petBusy = true
     task.spawn(function()
         pcall(petDamageSession)
