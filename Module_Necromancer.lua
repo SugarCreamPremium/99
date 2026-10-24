@@ -195,12 +195,22 @@ end
 
 local function releaseOnePet()
     if not CommandPet then return false end
+    -- ปล่อย pet ที่ไม่ได้ชุบมาก่อน (Halloween/สัตว์เลี้ยงอื่น) เก็บ cultist ที่ชุบไว้ตี
+    local fallback
     for _, model in ipairs(CollectionService:GetTagged("TamedAnimal_" .. LP.UserId)) do
-        if model.Parent and model:GetAttribute("Resurrected") == true then
-            pcall(function() CommandPet:FireServer(model, "Release") end)
-            if UpdatePets then pcall(function() UpdatePets:InvokeServer() end) end
-            return true
+        if model.Parent then
+            if model:GetAttribute("Resurrected") ~= true then
+                pcall(function() CommandPet:FireServer(model, "Release") end)
+                if UpdatePets then pcall(function() UpdatePets:InvokeServer() end) end
+                return true
+            end
+            fallback = fallback or model
         end
+    end
+    if fallback then
+        pcall(function() CommandPet:FireServer(fallback, "Release") end)
+        if UpdatePets then pcall(function() UpdatePets:InvokeServer() end) end
+        return true
     end
     return false
 end
@@ -249,28 +259,115 @@ local function tryResurrect()
 end
 
 -- ============================================
--- Pet damage (best effort - client สั่งให้ pet ตีไม่ได้)
+-- Pet damage (ระหว่างรอ Stronghold เปิด)
+-- client สั่งให้ pet ตีไม่ได้ -> ต้องเข้าตีเองเพื่อให้ pet เข้าร่วม แล้วรอเลือดลด
+-- ห้าม zeroEnemyHealth เด็ดขาด (เลือด 0 = pet ไม่มีอะไรให้ตี)
 -- ============================================
-local lastPetWarp = 0
-local PET_WARP_COOLDOWN = 15  -- ไม่วาร์ปถี่กว่านี้ (กันดึงตัวละครออกจาก Stronghold)
+local petBusy = false
+local PET_SESSION_TIMEOUT = 30   -- วิ ต่อมอน 1 ตัว
+local PET_NO_DAMAGE_LIMIT = 10   -- วิ ที่เลือดไม่ลด = pet ตีไม่ติด -> ตีใหม่
+
+local function monsterHP(model)
+    local hum = model:FindFirstChildOfClass("Humanoid")
+        or model:FindFirstChildWhichIsA("Humanoid", true)
+    if hum then return hum.Health end
+    return model:GetAttribute("Health")
+end
+
+local function stopFloating()
+    local char = LP.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    for _, name in ipairs({ "FloatAlignPosition", "FloatAlignOrientation", "FloatAttachment" }) do
+        local obj = hrp:FindFirstChild(name)
+        if obj then pcall(function() obj:Destroy() end) end
+    end
+end
+
+-- Necromancer ไม่มี axe ในชุดคลาส -> ต้องหาขวานจริงจาก Inventory (ไม้เท้าไม่ทำดาเมจ)
+local function getMeleeWeapon()
+    local inv = LP:FindFirstChild("Inventory")
+    if inv then
+        local best, bestDmg = nil, -1
+        for _, tool in ipairs(inv:GetChildren()) do
+            if tool:GetAttribute("ToolName") == "GenericAxe" then
+                local dmg = tool:GetAttribute("WeaponDamage") or 0
+                if dmg > bestDmg then best, bestDmg = tool, dmg end
+            end
+        end
+        if best then return best end
+    end
+    return _G.bestAxeCombat
+end
+
+local function petDamageSession()
+    local Event = _G.Event
+    local ownerId = _G.ownerId
+    local ensureFloating = _G.ensureFloating
+    local Client = getClient()
+    if not (Event and ownerId and ensureFloating and Client) then return end
+
+    local weapon = getMeleeWeapon()
+    if not weapon then return end
+
+    local monster = findNightMonsters()[1]
+    if not monster then return end
+    local root = monster:FindFirstChild("HumanoidRootPart") or monster.PrimaryPart
+    if not root then return end
+
+    local lastHP = monsterHP(monster)
+    if not lastHP or lastHP <= 0 then return end
+
+    pcall(function() Client.InventoryHandler.RequestEquipItem(weapon) end)
+    task.wait(0.3)
+    ensureFloating()
+
+    local deadline = os.clock() + PET_SESSION_TIMEOUT
+    local lastDropAt = os.clock()
+    local lastHit = 0
+
+    while os.clock() < deadline and monster.Parent and isCharacterAlive() do
+        if checkAnyCultistSpawned() then break end
+
+        local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+        local r = monster:FindFirstChild("HumanoidRootPart") or monster.PrimaryPart
+        if not (hrp and r) then break end
+
+        hrp.CFrame = CFrame.new(r.Position + Vector3.new(0, 10, 0))
+            * CFrame.Angles(math.rad(-90), 0, 0)
+
+        if os.clock() - lastHit >= 1 then
+            lastHit = os.clock()
+            local w = getMeleeWeapon() or weapon
+            pcall(function() Event:InvokeServer(monster, w, ownerId, hrp.CFrame, false) end)
+        end
+
+        local hp = monsterHP(monster)
+        if hp and hp < lastHP then
+            lastHP = hp
+            lastDropAt = os.clock()
+        elseif os.clock() - lastDropAt > PET_NO_DAMAGE_LIMIT then
+            -- เลือดไม่ลดเลย = pet ตีไม่ติด -> ตีใหม่อีกรอบ
+            local w = getMeleeWeapon() or weapon
+            pcall(function() Client.InventoryHandler.RequestEquipItem(w) end)
+            task.wait(0.3)
+            lastDropAt = os.clock()
+        end
+
+        task.wait(0.5)
+    end
+    stopFloating()
+end
 
 local function petDamageIdle()
-    if os.clock() - lastPetWarp < PET_WARP_COOLDOWN then return end
+    if petBusy then return end
     if checkAnyCultistSpawned() then return end
     if (LP:GetAttribute("CurrentPets") or 0) == 0 then return end
-    if workspace:GetAttribute("State") ~= "Night" then return end
-
-    local monsters = findNightMonsters()
-    local target = monsters[1]
-    if not target then return end
-
-    local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
-    local root = target:FindFirstChild("HumanoidRootPart") or target.PrimaryPart
-    if not (hrp and root) then return end
-
-    -- ไม่ zeroEnemyHealth: ปล่อยให้ pet ตีเลือดจริงเพื่อให้ PetDamageDealt ขึ้น
-    lastPetWarp = os.clock()
-    hrp.CFrame = CFrame.new(root.Position + Vector3.new(0, 10, 0))
+    petBusy = true
+    task.spawn(function()
+        pcall(petDamageSession)
+        petBusy = false
+    end)
 end
 
 -- ============================================
