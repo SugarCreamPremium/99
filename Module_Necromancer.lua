@@ -360,6 +360,7 @@ local PET_SESSION_TIMEOUT = 30   -- วิ ต่อมอน 1 ตัว
 local PET_NO_DAMAGE_LIMIT = 10   -- วิ ที่เลือดไม่ลด = pet ตีไม่ติด -> ตีใหม่
 local PET_SUMMON_COOLDOWN = 5    -- วิ กันยิง RequestSummonAllPets รัวเกิน
 local lastPetSummon = 0
+local lastNoTargetLog = 0
 
 -- pet ไม่วาร์ปตามทันที -> ต้องเรียกกลับมาหาตัวก่อนตีทุกครั้ง
 local function summonPets()
@@ -371,10 +372,14 @@ local function summonPets()
 end
 
 local function monsterHP(model)
+    -- เกมนี้เก็บเลือด NPC ไว้ที่ attribute "Health" บนโมเดล (EnemyHandler.lua:370)
+    -- Humanoid.Health เป็นแค่ค่าที่ server sync มา -> อ่าน attribute ก่อน
+    local attr = model:GetAttribute("Health")
+    if attr then return attr end
     local hum = model:FindFirstChildOfClass("Humanoid")
         or model:FindFirstChildWhichIsA("Humanoid", true)
     if hum then return hum.Health end
-    return model:GetAttribute("Health")
+    return nil
 end
 
 local function stopFloating()
@@ -427,7 +432,16 @@ local function petDamageSession()
         end
         monster, mustKill = nearestModel(alive), false
     end
-    if not monster then return end
+    if not monster then
+        -- ไม่มีเป้าเลย = บอกสาเหตุไว้ (wild = 0 เพราะติด StrongholdEnemy หรือยังไม่มีศพ)
+        if os.clock() - lastNoTargetLog > 30 then
+            lastNoTargetLog = os.clock()
+            print(string.format("[Necromancer] No target - wild=%d night=%d souls=%d pets=%d",
+                #findWildCultists(), #findNightMonsters(), soulsCount(),
+                LP:GetAttribute("CurrentPets") or 0))
+        end
+        return
+    end
     local root = monster:FindFirstChild("HumanoidRootPart") or monster.PrimaryPart
     if not root then return end
 
@@ -455,7 +469,8 @@ local function petDamageSession()
         -- Stronghold เปิด/มี Cultist = เลิกตีมอนทันที ไปเคลียร์ Stronghold ก่อน
         if strongholdBusy() then break end
         -- pet ตายหมด = ตีต่อไม่ได้ดาเมจให้ pet แล้ว จบ session ไปวาร์ปกลับ
-        if petAliveCount() == 0 then break end
+        -- (แต่ถ้าเป้าคือ Cultist ยังต้องตีเองต่อ เพื่อเก็บ soul มาชุบ pet)
+        if not mustKill and petAliveCount() == 0 then break end
         -- กลายเป็นศพแล้ว (tag/Dead) = ไม่มีอะไรให้ตี จบ session ไปชุบทันที
         if monster:HasTag("CultistCorpse") or monster:GetAttribute("Dead") == true then break end
 
@@ -513,10 +528,14 @@ end
 
 local function petDamageIdle()
     if petBusy then return end
-    -- Stronghold เปิด/กำลังตี = ห้ามออกไปตีมอน ให้เคลียร์ Stronghold ก่อน
-    if strongholdBusy() then return end
-    if (LP:GetAttribute("CurrentPets") or 0) == 0 then return end
-    if petAliveCount() == 0 then return end
+    if strongholdBusy() then
+        -- Stronghold: MainScript ไม่ลดเลือดมอนแล้วถ้า Necromancer ยังไม่ Lv.3 (รอ pet ตีเก็บ PetDamage)
+        -- แต่ fight loop วาร์ปข้ามทีละ Cultist -> pet เดินตามไม่ทัน ต้องเรียกมาที่ตัวเป็นระยะ
+        if petAliveCount() > 0 then task.spawn(summonPets) end
+        return
+    end
+    -- ไม่มี pet ก็ต้องออกไปตีเอง ไม่งั้นตอนเริ่มคลาส (CurrentPets = 0) จะไม่เคยออกไปเลย
+    -- = ไม่มีทางได้ soul = ไม่มีทางได้ศพ = ไม่มีทางได้ pet (deadlock)
     petBusy = true
     task.spawn(function()
         pcall(petDamageSession)
