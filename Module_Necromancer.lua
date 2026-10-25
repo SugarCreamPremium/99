@@ -21,6 +21,7 @@
 local M = {}
 
 local LP = _G.LocalPlayer or game:GetService("Players").LocalPlayer
+local Players = game:GetService("Players")
 local CQ = _G.CLASS_QUESTS or {}
 local CSC = _G.classStatCache or {}
 local CollectionService = game:GetService("CollectionService")
@@ -33,6 +34,49 @@ end
 local function findNightMonsters()
     local fn = _G.findNightMonsters
     return fn and fn() or {}
+end
+
+-- Cultist ข้างนอก Stronghold = ตัวที่ทิ้งศพให้ชุบ
+-- (Stronghold wave ให้ soul แต่ไม่ทิ้งศพ -> กรอง StrongholdEnemy ออก)
+-- ทำงานเฉพาะตอน Stronghold ไม่ได้ตีอยู่ (petDamageIdle การ์ด strongholdBusy ไว้แล้ว)
+local function findWildCultists()
+    local list = {}
+    local chars = workspace:FindFirstChild("Characters")
+    if not chars then return list end
+    for _, m in ipairs(chars:GetChildren()) do
+        if m:IsA("Model")
+            and string.find(m.Name, "Cultist")
+            and m:GetAttribute("StrongholdEnemy") ~= true
+            and m:GetAttribute("Resurrected") ~= true
+            and m:GetAttribute("NotAttackable") ~= true
+            and not Players:GetPlayerFromCharacter(m)
+            and not (m:HasTag("Friendly") or m:HasTag("Pet") or m:HasTag("Ally"))
+        then
+            local hum = m:FindFirstChildOfClass("Humanoid")
+                or m:FindFirstChildWhichIsA("Humanoid", true)
+            if hum and hum.Parent and hum.Health > 0 then
+                table.insert(list, m)
+            end
+        end
+    end
+    return list
+end
+
+-- ตัวใกล้สุดก่อน (กันบินข้ามแมพไปหาตัวไกลทั้งที่ตัวใกล้กว่า)
+local function nearestModel(list)
+    local myPos = LP.Character and LP.Character:GetPivot().Position
+    if not myPos then return list[1] end
+    local best, bestDist
+    for _, m in ipairs(list) do
+        local root = m.PrimaryPart or m:FindFirstChild("HumanoidRootPart")
+        if root then
+            local dist = (root.Position - myPos).Magnitude
+            if not bestDist or dist < bestDist then
+                best, bestDist = m, dist
+            end
+        end
+    end
+    return best or list[1]
 end
 
 -- Stronghold: OpenTime คือเวลาเปิดรอบถัดไป (วินาที server)
@@ -364,7 +408,11 @@ local function petDamageSession()
     local weapon = getMeleeWeapon()
     if not weapon then return end
 
-    local monster = findNightMonsters()[1]
+    -- Cultist ก่อน = ฆ่าแล้วได้ศพไปชุบ; ไม่มีค่อยไปตีมอนกลางคืนเอา PetDamage
+    local monster, mustKill = nearestModel(findWildCultists()), true
+    if not monster then
+        monster, mustKill = nearestModel(findNightMonsters()), false
+    end
     if not monster then return end
     local root = monster:FindFirstChild("HumanoidRootPart") or monster.PrimaryPart
     if not root then return end
@@ -418,6 +466,15 @@ local function petDamageSession()
             task.wait(0.3)
             summonPets()
             lastDropAt = os.clock()
+        end
+
+        -- Cultist ต้องตายจริงถึงจะทิ้งศพ (เลือด 0 = ตายปลอมในเกมนี้) -> ตีซ้ำอีกครั้ง
+        if mustKill and monster.Parent then
+            local h = monsterHP(monster)
+            if h and h <= 0 then
+                local w = getMeleeWeapon() or weapon
+                pcall(function() Event:InvokeServer(monster, w, ownerId, hrp.CFrame, false) end)
+            end
         end
 
         task.wait(0.5)
