@@ -39,6 +39,8 @@ end
 -- Cultist ข้างนอก Stronghold = ตัวที่ทิ้งศพให้ชุบ
 -- (Stronghold wave ให้ soul แต่ไม่ทิ้งศพ -> กรอง StrongholdEnemy ออก)
 -- ทำงานเฉพาะตอน Stronghold ไม่ได้ตีอยู่ (petDamageIdle การ์ด strongholdBusy ไว้แล้ว)
+-- ตัวที่เพิ่งตีปิดยืนยันแล้ว = รอ tag CultistCorpse มาจาก server ก่อน ห้ามเลือกซ้ำ
+local deadUntil = setmetatable({}, { __mode = "k" })
 local function findWildCultists()
     local list = {}
     local chars = workspace:FindFirstChild("Characters")
@@ -49,6 +51,9 @@ local function findWildCultists()
             and m:GetAttribute("StrongholdEnemy") ~= true
             and m:GetAttribute("Resurrected") ~= true
             and m:GetAttribute("NotAttackable") ~= true
+            and m:GetAttribute("Dead") ~= true
+            and not m:HasTag("CultistCorpse")  -- ตายแล้ว = ศพ ไม่ใช่เป้าตี
+            and not (deadUntil[m] and os.clock() < deadUntil[m])
             and not Players:GetPlayerFromCharacter(m)
             and not (m:HasTag("Friendly") or m:HasTag("Pet") or m:HasTag("Ally"))
         then
@@ -411,7 +416,16 @@ local function petDamageSession()
     -- Cultist ก่อน = ฆ่าแล้วได้ศพไปชุบ; ไม่มีค่อยไปตีมอนกลางคืนเอา PetDamage
     local monster, mustKill = nearestModel(findWildCultists()), true
     if not monster then
-        monster, mustKill = nearestModel(findNightMonsters()), false
+        -- มอนกลางคืน: กรองศพ/ตัวที่เพิ่งตีปิดออกด้วย (findNightMonsters ไม่รู้จัก CultistCorpse)
+        local alive = {}
+        for _, m in ipairs(findNightMonsters()) do
+            if not m:HasTag("CultistCorpse")
+                and m:GetAttribute("Dead") ~= true
+                and not (deadUntil[m] and os.clock() < deadUntil[m]) then
+                table.insert(alive, m)
+            end
+        end
+        monster, mustKill = nearestModel(alive), false
     end
     if not monster then return end
     local root = monster:FindFirstChild("HumanoidRootPart") or monster.PrimaryPart
@@ -435,12 +449,15 @@ local function petDamageSession()
     local deadline = os.clock() + PET_SESSION_TIMEOUT
     local lastDropAt = os.clock()
     local lastHit = 0
+    local killHitSent = false
 
     while os.clock() < deadline and monster.Parent and isCharacterAlive() do
         -- Stronghold เปิด/มี Cultist = เลิกตีมอนทันที ไปเคลียร์ Stronghold ก่อน
         if strongholdBusy() then break end
         -- pet ตายหมด = ตีต่อไม่ได้ดาเมจให้ pet แล้ว จบ session ไปวาร์ปกลับ
         if petAliveCount() == 0 then break end
+        -- กลายเป็นศพแล้ว (tag/Dead) = ไม่มีอะไรให้ตี จบ session ไปชุบทันที
+        if monster:HasTag("CultistCorpse") or monster:GetAttribute("Dead") == true then break end
 
         local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
         local r = monster:FindFirstChild("HumanoidRootPart") or monster.PrimaryPart
@@ -468,12 +485,17 @@ local function petDamageSession()
             lastDropAt = os.clock()
         end
 
-        -- Cultist ต้องตายจริงถึงจะทิ้งศพ (เลือด 0 = ตายปลอมในเกมนี้) -> ตีซ้ำอีกครั้ง
-        if mustKill and monster.Parent then
+        -- Cultist ต้องตายจริงถึงจะทิ้งศพ (เลือด 0 = ตายปลอมในเกมนี้) -> ตีปิดยืนยันครั้งเดียว
+        -- ยิงซ้ำทุก 0.5 วิไม่ได้อะไร เพิ่มแค่ดีเลย์กว่าจะได้ศพไปชุบ
+        if mustKill and not killHitSent then
             local h = monsterHP(monster)
             if h and h <= 0 then
+                killHitSent = true
+                deadUntil[monster] = os.clock() + 5  -- กันเลือกซ้ำก่อน server ติด tag CultistCorpse
                 local w = getMeleeWeapon() or weapon
                 pcall(function() Event:InvokeServer(monster, w, ownerId, hrp.CFrame, false) end)
+                task.wait(0.5)
+                break
             end
         end
 
