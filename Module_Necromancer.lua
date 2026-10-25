@@ -359,6 +359,7 @@ local petBusy = false
 local PET_SESSION_TIMEOUT = 30   -- วิ ต่อมอน 1 ตัว
 local PET_NO_DAMAGE_LIMIT = 10   -- วิ ที่เลือดไม่ลด = pet ตีไม่ติด -> ตีใหม่
 local PET_SUMMON_COOLDOWN = 5    -- วิ กันยิง RequestSummonAllPets รัวเกิน
+local HIT_INTERVAL = 0.2         -- วิ ระหว่างตี (Woodsman/Alien ใช้ 0.1, เผื่อ server)
 local lastPetSummon = 0
 local lastNoTargetLog = 0
 
@@ -461,9 +462,6 @@ local function petDamageSession()
 
     local deadline = os.clock() + PET_SESSION_TIMEOUT
     local lastDropAt = os.clock()
-    local lastHit = 0
-    local lastZero = 0
-    local killHitSent = false
 
     while os.clock() < deadline and monster.Parent and isCharacterAlive() do
         -- Stronghold เปิด/มี Cultist = เลิกตีมอนทันที ไปเคลียร์ Stronghold ก่อน
@@ -472,13 +470,9 @@ local function petDamageSession()
         -- (แต่ถ้าเป้าคือ Cultist ยังต้องตีเองต่อ เพื่อเก็บ soul มาชุบ pet)
         if not mustKill and petAliveCount() == 0 then break end
         -- กลายเป็นศพแล้ว (tag/Dead) = ไม่มีอะไรให้ตี จบ session ไปชุบทันที
-        if monster:HasTag("CultistCorpse") or monster:GetAttribute("Dead") == true then break end
-
-        -- ไม่มี pet = ไม่มีใครช่วยตี ต้องลดเลือดเองก่อน ไม่งั้นตีเท่าไรก็ไม่ตาย
-        -- (มี pet = ปล่อยเลือดไว้ให้ pet ตีเก็บ PetDamageDealt)
-        if (LP:GetAttribute("CurrentPets") or 0) == 0 and os.clock() - lastZero >= 2 then
-            lastZero = os.clock()
-            pcall(function() _G.zeroEnemyHealth(monster) end)
+        if monster:HasTag("CultistCorpse") or monster:GetAttribute("Dead") == true then
+            deadUntil[monster] = os.clock() + 5  -- กันเลือกซ้ำก่อน tag จาก server มา
+            break
         end
 
         local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
@@ -488,40 +482,27 @@ local function petDamageSession()
         hrp.CFrame = CFrame.new(r.Position + Vector3.new(0, 10, 0))
             * CFrame.Angles(math.rad(-90), 0, 0)
 
-        if os.clock() - lastHit >= 0.5 then
-            lastHit = os.clock()
-            local w = getMeleeWeapon() or weapon
-            pcall(function() Event:InvokeServer(monster, w, ownerId, hrp.CFrame, false) end)
+        -- ไม่มี pet = ไม่มีใครช่วยตี ต้องลดเลือดเองก่อนตีทุกครั้ง (แบบ BGH)
+        -- ไม่งั้นตีเท่าไรก็ไม่ตาย; มี pet = ปล่อยเลือดไว้ให้ pet ตีเก็บ PetDamageDealt
+        if (LP:GetAttribute("CurrentPets") or 0) == 0 then
+            pcall(function() _G.zeroEnemyHealth(monster) end)
         end
+
+        local w = getMeleeWeapon() or weapon
+        pcall(function() Event:InvokeServer(monster, w, ownerId, hrp.CFrame, false) end)
 
         local hp = monsterHP(monster)
         if hp and hp < lastHP then
             lastHP = hp
             lastDropAt = os.clock()
         elseif os.clock() - lastDropAt > PET_NO_DAMAGE_LIMIT then
-            -- เลือดไม่ลดเลย = pet ตีไม่ติด -> ตีใหม่อีกรอบ + เรียก pet กลับมา
-            local w = getMeleeWeapon() or weapon
+            -- เลือดไม่ลดเลย = pet ตีไม่ติด -> ถือขวานใหม่ + เรียก pet กลับมา
             pcall(function() Client.InventoryHandler.RequestEquipItem(w) end)
-            task.wait(0.3)
             summonPets()
             lastDropAt = os.clock()
         end
 
-        -- Cultist ต้องตายจริงถึงจะทิ้งศพ (เลือด 0 = ตายปลอมในเกมนี้) -> ตีปิดยืนยันครั้งเดียว
-        -- ยิงซ้ำทุก 0.5 วิไม่ได้อะไร เพิ่มแค่ดีเลย์กว่าจะได้ศพไปชุบ
-        if mustKill and not killHitSent then
-            local h = monsterHP(monster)
-            if h and h <= 0 then
-                killHitSent = true
-                deadUntil[monster] = os.clock() + 5  -- กันเลือกซ้ำก่อน server ติด tag CultistCorpse
-                local w = getMeleeWeapon() or weapon
-                pcall(function() Event:InvokeServer(monster, w, ownerId, hrp.CFrame, false) end)
-                task.wait(0.5)
-                break
-            end
-        end
-
-        task.wait(0.2)
+        task.wait(HIT_INTERVAL)
     end
     stopFloating()
 
