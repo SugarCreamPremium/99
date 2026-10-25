@@ -481,7 +481,7 @@ local function petDamageSession()
         hrp.CFrame = CFrame.new(r.Position + Vector3.new(0, 10, 0))
             * CFrame.Angles(math.rad(-90), 0, 0)
 
-        if os.clock() - lastHit >= 1 then
+        if os.clock() - lastHit >= 0.5 then
             lastHit = os.clock()
             local w = getMeleeWeapon() or weapon
             pcall(function() Event:InvokeServer(monster, w, ownerId, hrp.CFrame, false) end)
@@ -514,16 +514,12 @@ local function petDamageSession()
             end
         end
 
-        task.wait(0.5)
+        task.wait(0.2)
     end
     stopFloating()
 
-    -- pet ตายหมดระหว่างตี = ไม่มีอะไรทำต่อ กลับไปรอที่ Stronghold
-    -- (Stronghold เปิดอยู่ = Stronghold loop วาร์ปเองอยู่แล้ว ไม่ต้องแย่งวาร์ป)
-    if not strongholdBusy() and petAliveCount() == 0 then
-        print("[Necromancer] All pets dead - returning to Stronghold")
-        warpBackToStronghold()
-    end
+    -- pet ตายหมดระหว่างตี = ยังอยู่ที่เดิม ปล่อยให้ loop ถัดไปหาเป้าใหม่เอง
+    -- (ห้ามวาร์ปกลับ Stronghold: จะเด้งกลับทุกครั้งที่ตีได้ 1 ตัว แล้วเริ่มใหม่ไม่จบ)
 end
 
 local function petDamageIdle()
