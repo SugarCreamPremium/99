@@ -363,12 +363,12 @@ local lastPetSummon = 0
 local lastNoTargetLog = 0
 
 -- pet ไม่วาร์ปตามทันที -> ต้องเรียกกลับมาหาตัวก่อนตีทุกครั้ง
+-- ไม่รอให้ pet เดินมาถึง: ตีเองได้ทันที ส่วน pet ค่อยตามมาสมทบระหว่างตี
 local function summonPets()
     if not SummonAllPets then return end
     if os.clock() - lastPetSummon < PET_SUMMON_COOLDOWN then return end
     lastPetSummon = os.clock()
     pcall(function() SummonAllPets:FireServer() end)
-    task.wait(2.5)  -- ให้ pet เดินมาถึงก่อนเริ่มตี
 end
 
 local function monsterHP(model)
@@ -446,23 +446,23 @@ local function petDamageSession()
     if not root then return end
 
     local lastHP = monsterHP(monster)
-    if not lastHP or lastHP <= 0 then return end
+    if not lastHP then return end
 
-    pcall(function() Client.InventoryHandler.RequestEquipItem(weapon) end)
-    task.wait(0.3)
-    ensureFloating()
-
-    -- วาร์ปไปถึงมอนก่อน แล้วเรียก pet ให้ตามมา (1 ครั้งต่อ 1 มอน)
+    -- วาร์ปก่อนเลย (ไม่รอ equip) แล้วค่อยถือขวาน+เรียก pet
     local hrp0 = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
     if hrp0 then
         hrp0.CFrame = CFrame.new(root.Position + Vector3.new(0, 10, 0))
             * CFrame.Angles(math.rad(-90), 0, 0)
     end
+    pcall(function() Client.InventoryHandler.RequestEquipItem(weapon) end)
+    task.wait(0.15)
+    ensureFloating()
     summonPets()
 
     local deadline = os.clock() + PET_SESSION_TIMEOUT
     local lastDropAt = os.clock()
     local lastHit = 0
+    local lastZero = 0
     local killHitSent = false
 
     while os.clock() < deadline and monster.Parent and isCharacterAlive() do
@@ -473,6 +473,13 @@ local function petDamageSession()
         if not mustKill and petAliveCount() == 0 then break end
         -- กลายเป็นศพแล้ว (tag/Dead) = ไม่มีอะไรให้ตี จบ session ไปชุบทันที
         if monster:HasTag("CultistCorpse") or monster:GetAttribute("Dead") == true then break end
+
+        -- ไม่มี pet = ไม่มีใครช่วยตี ต้องลดเลือดเองก่อน ไม่งั้นตีเท่าไรก็ไม่ตาย
+        -- (มี pet = ปล่อยเลือดไว้ให้ pet ตีเก็บ PetDamageDealt)
+        if (LP:GetAttribute("CurrentPets") or 0) == 0 and os.clock() - lastZero >= 2 then
+            lastZero = os.clock()
+            pcall(function() _G.zeroEnemyHealth(monster) end)
+        end
 
         local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
         local r = monster:FindFirstChild("HumanoidRootPart") or monster.PrimaryPart
