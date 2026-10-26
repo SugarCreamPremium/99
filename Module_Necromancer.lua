@@ -460,7 +460,7 @@ local function petDamageSession()
             lastNoTargetLog = os.clock()
             print(string.format("[Necromancer] No target - wild=%d night=%d souls=%d pets=%d",
                 #findWildCultists(), #findNightMonsters(), soulsCount(),
-                LP:GetAttribute("CurrentPets") or 0))
+                petAliveCount()))
         end
         return
     end
@@ -504,9 +504,10 @@ local function petDamageSession()
         hrp.CFrame = CFrame.new(r.Position + Vector3.new(0, 10, 0))
             * CFrame.Angles(math.rad(-90), 0, 0)
 
-        -- ไม่มี pet = ไม่มีใครช่วยตี ต้องลดเลือดเองก่อน (แบบ BGH) แล้วรอ 1 วิให้ server apply ก่อนเริ่มตี
-        -- มี pet = ปล่อยเลือดไว้ให้ pet ตีเก็บ PetDamageDealt (ไม่ลดเลือด)
-        local hasPets = (LP:GetAttribute("CurrentPets") or 0) > 0
+        -- ไม่มี pet = วาร์ปมาแล้ว ลดเลือด รอ 1 วิ แล้วตีรัว 0.2 วิจนตาย (แบบ module อื่น)
+        -- มี pet = ปล่อยเลือดไว้ให้ pet ตีเก็บ PetDamageDealt ตีแค่ 1 วิ/ครั้ง
+        -- อ่าน petAliveCount() ไม่ใช่ CurrentPets: attribute ดีเลย์, pet ตายแล้วค้างค่าเดิมได้
+        local hasPets = petAliveCount() > 0
         if not hasPets then
             pcall(function() _G.zeroEnemyHealth(monster) end)
             if not zeroed then
