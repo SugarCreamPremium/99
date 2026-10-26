@@ -51,6 +51,7 @@ local function findWildCultists()
             and m:GetAttribute("StrongholdEnemy") ~= true
             and m:GetAttribute("Resurrected") ~= true
             and m:GetAttribute("NotAttackable") ~= true
+            and m:GetAttribute("NotDamageable") ~= true  -- รับดาเมจไม่ได้ = ตีเท่าไรก็ไม่เข้า
             and m:GetAttribute("Dead") ~= true
             and m:GetAttribute("Resource") ~= "IceBlock"  -- ก้อนน้ำแข็ง = ไม่ใช่เป้า (ตีเท่าไรก็ไม่ตาย)
             and not m:HasTag("IceBlock")
@@ -98,17 +99,32 @@ local function strongholdOpenTime()
     return nil
 end
 
--- Stronghold เปิด/กำลังตี = ห้ามฟาร์ม pet ต้องเคลียร์ Stronghold ให้จบก่อน
--- latch: เริ่มรอบเมื่อ OpenTime เปลี่ยน -> busy จนจบรอบ (OpenTime ถูกตั้งใหม่เมื่อเคลียร์รอบ)
-local openCycle, busy = nil, false
-local function strongholdBusy()
-    local openTime = strongholdOpenTime()
-    if openTime ~= openCycle then
-        openCycle = openTime
-        busy = openTime ~= nil and workspace:GetServerTimeNow() >= openTime
+-- Cultist ที่ยังตีอยู่จริง
+-- ตัวที่ Dead/กลายเป็นศพแล้วยังค้างใน Characters ได้หลายนาที -> ถ้านับด้วย busy จะค้าง true
+-- ตลอดช่วงรอรอบถัดไป = Necromancer ไม่ยอมออกไปฟาร์มเลย (อาการ "จบรอบ 1 แล้วนิ่งไป 3-5 นาที")
+local function liveCultistsExist()
+    local chars = workspace:FindFirstChild("Characters")
+    if not chars then return false end
+    for _, c in ipairs(chars:GetChildren()) do
+        if c:GetAttribute("StrongholdEnemy") == true
+            and c:GetAttribute("Resurrected") ~= true
+            and c:GetAttribute("Dead") ~= true
+            and not c:HasTag("CultistCorpse")
+            and c:FindFirstChildOfClass("Humanoid") then
+            return true
+        end
     end
-    if checkAnyCultistSpawned() then busy = true end
-    return busy
+    return false
+end
+
+-- Stronghold เปิด/กำลังตี = ห้ามฟาร์ม pet ต้องเคลียร์ Stronghold ให้จบก่อน
+-- คำนวณสดทุกครั้ง: เดิมเป็น latch ที่ติด true แล้วไม่ปลด -> ระหว่างรอรอบถัดไปค้างตลอด
+-- ระหว่างรอบ OpenTime เป็นอดีต -> now >= openTime = true (busy) แม้ cultist ตายหมดชั่วคราว
+-- จบรอบแล้ว server ตั้ง OpenTime เป็นอนาคต -> ปลด busy เอง
+local function strongholdBusy()
+    if liveCultistsExist() then return true end
+    local openTime = strongholdOpenTime()
+    return openTime ~= nil and workspace:GetServerTimeNow() >= openTime
 end
 
 local function isCharacterAlive()
@@ -408,10 +424,21 @@ local function stopFloating()
     local char = LP.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
-    for _, name in ipairs({ "FloatAlignPosition", "FloatAlignOrientation", "FloatAttachment" }) do
+    for _, name in ipairs({ "FloatAlignPosition", "FloatAlignOrientation", "FloatAttachment", "NecroHover" }) do
         local obj = hrp:FindFirstChild(name)
         if obj then pcall(function() obj:Destroy() end) end
     end
+end
+
+-- ลอยด้วย BodyVelocity ความเร็วศูนย์ (แบบ Stronghold): AlignPosition ของ MainScript
+-- ตั้ง target = ตำแหน่งตัวเราเองทุก 0.1 วิ -> ไม่กันโน้มถ่วง ตัวร่วงระหว่างรอแล้ววาร์ปกลับ = เด้ง
+local function startHover(hrp)
+    if not hrp or hrp:FindFirstChild("NecroHover") then return end
+    local bv = Instance.new("BodyVelocity")
+    bv.Name = "NecroHover"
+    bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+    bv.Velocity = Vector3.zero
+    bv.Parent = hrp
 end
 
 -- Necromancer ไม่มี axe ในชุดคลาส -> ต้องหาขวานจริงจาก Inventory (ไม้เท้าไม่ทำดาเมจ)
@@ -427,15 +454,20 @@ local function getMeleeWeapon()
         end
         if best then return best end
     end
-    return _G.bestAxeCombat
+    -- bestAxeCombat จับ reference ตอน start -> ขวานแตกแล้วยังชี้ตัวที่ถูกย้ายออกจาก Inventory
+    -- RequestEquipItem จะ early-return เงียบๆ = ถือของที่ไม่มีอยู่จริง ยิง server ได้ดาเมจ 0
+    local fallback = _G.bestAxeCombat
+    if fallback and fallback.Parent and fallback.Parent.Name == "Inventory" then
+        return fallback
+    end
+    return nil
 end
 
 local function petDamageSession()
     local Event = _G.Event
     local ownerId = _G.ownerId
-    local ensureFloating = _G.ensureFloating
     local Client = getClient()
-    if not (Event and ownerId and ensureFloating and Client) then return end
+    if not (Event and ownerId and Client) then return end
 
     local weapon = getMeleeWeapon()
     if not weapon then return end
@@ -478,12 +510,15 @@ local function petDamageSession()
     end
     pcall(function() Client.InventoryHandler.RequestEquipItem(weapon) end)
     task.wait(0.15)
-    ensureFloating()
+    -- ถอด AlignPosition ที่ค้างจาก loop อื่นก่อน ไม่งั้นมันจะสู้กับ BodyVelocity
+    stopFloating()
+    startHover(hrp0)
     summonPets()
 
     local deadline = os.clock() + PET_SESSION_TIMEOUT
     local lastDropAt = os.clock()
     local zeroed = false   -- ลดเลือดไปแล้วหรือยัง (รอ ZERO_WAIT ครั้งเดียวต่อ session)
+    local noDamageRounds = 0
 
     while os.clock() < deadline and monster.Parent and isCharacterAlive() do
         -- Stronghold เปิด/มี Cultist = เลิกตีมอนทันที ไปเคลียร์ Stronghold ก่อน
@@ -503,6 +538,7 @@ local function petDamageSession()
 
         hrp.CFrame = CFrame.new(r.Position + Vector3.new(0, 10, 0))
             * CFrame.Angles(math.rad(-90), 0, 0)
+        startHover(hrp)
 
         -- ไม่มี pet = วาร์ปมาแล้ว ลดเลือด รอ 1 วิ แล้วตีรัว 0.2 วิจนตาย (แบบ module อื่น)
         -- มี pet = ปล่อยเลือดไว้ให้ pet ตีเก็บ PetDamageDealt ตีแค่ 1 วิ/ครั้ง
@@ -516,18 +552,28 @@ local function petDamageSession()
             end
         end
 
-        local w = getMeleeWeapon() or weapon
+        -- ขวานแตกกลาง session = ไม่มีอะไรทำดาเมจได้ -> จบ session (อย่ายิงด้วย reference เก่า)
+        local w = getMeleeWeapon()
+        if not w then break end
         pcall(function() Event:InvokeServer(monster, w, ownerId, hrp.CFrame, false) end)
 
         local hp = monsterHP(monster)
         if hp and hp < lastHP then
             lastHP = hp
             lastDropAt = os.clock()
+            noDamageRounds = 0
         elseif os.clock() - lastDropAt > PET_NO_DAMAGE_LIMIT then
+            lastDropAt = os.clock()
+            noDamageRounds = noDamageRounds + 1
+            if noDamageRounds >= 2 then
+                -- 2 รอบที่เลือดไม่ขยับ = ตัวนี้ตีไม่เข้า (NotDamageable / LOS / หลุดระยะ)
+                -- ไม่ตัดสินที่รอบแรก: pet อาจเดินมาช้า ให้โอกาส re-equip + summon 1 ครั้งก่อน
+                deadUntil[monster] = os.clock() + 60
+                break
+            end
             -- เลือดไม่ลดเลย = pet ตีไม่ติด -> ถือขวานใหม่ + เรียก pet กลับมา
             pcall(function() Client.InventoryHandler.RequestEquipItem(w) end)
             summonPets()
-            lastDropAt = os.clock()
         end
 
         task.wait(hasPets and HIT_INTERVAL_PET or HIT_INTERVAL)
