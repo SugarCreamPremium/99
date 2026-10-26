@@ -1,5 +1,5 @@
 -- ============================================
--- Module_Necromancer.lua 8.13
+-- Module_Necromancer.lua 9.25
 -- Class implementation.
 -- GitHub: https://raw.githubusercontent.com/SugarCreamPremium/99/main/Module_Necromancer.lua
 --
@@ -394,7 +394,7 @@ end
 -- ============================================
 local petBusy = false
 local PET_SESSION_TIMEOUT = 30   -- วิ ต่อมอน 1 ตัว
-local PET_NO_DAMAGE_LIMIT = 10   -- วิ ที่เลือดไม่ลด = pet ตีไม่ติด -> ตีใหม่
+local PET_NO_DAMAGE_LIMIT = 5    -- วิ ที่เลือดไม่ลด = ตีไม่เข้า -> เปลี่ยนตัวเลย
 local PET_SUMMON_COOLDOWN = 5    -- วิ กันยิง RequestSummonAllPets รัวเกิน
 local HIT_INTERVAL = 0.2         -- วิ ระหว่างตีตอนไม่มี pet (ลดเลือดเองแล้วตีเอง)
 local HIT_INTERVAL_PET = 1       -- วิ ระหว่างตีตอนมี pet (แค่ตีเบาๆ ให้ pet เข้าร่วม)
@@ -412,14 +412,15 @@ local function summonPets()
 end
 
 local function monsterHP(model)
-    -- เกมนี้เก็บเลือด NPC ไว้ที่ attribute "Health" บนโมเดล (EnemyHandler.lua:370)
-    -- Humanoid.Health เป็นแค่ค่าที่ server sync มา -> อ่าน attribute ก่อน
+    -- เกมเก็บเลือด NPC ไว้ที่ attribute "Health" บนโมเดล (EnemyHandler.lua:370)
+    -- แต่หลอดเลือดจริงอ่านจาก Humanoid.Health ใน child "NPC" (UpdateHealthBar)
+    -- ไม่รู้ว่า server sync ตัวไหนตอนโดนตี -> เอา "ค่าน้อยสุด" = ลดเมื่อตัวใดตัวหนึ่งลด
     local attr = model:GetAttribute("Health")
-    if attr then return attr end
     local hum = model:FindFirstChildOfClass("Humanoid")
         or model:FindFirstChildWhichIsA("Humanoid", true)
-    if hum then return hum.Health end
-    return nil
+    local humHp = hum and hum.Health
+    if attr and humHp then return math.min(attr, humHp) end
+    return attr or humHp
 end
 
 -- วาร์ปไปหาเป้า + ล็อกตำแหน่ง/ท่าทางไว้ตลอด (หันหน้าลง -90 องศา)
@@ -464,12 +465,14 @@ local function stopFloating()
 end
 
 -- Necromancer ไม่มี axe ในชุดคลาส -> ต้องหาขวานจริงจาก Inventory (ไม้เท้าไม่ทำดาเมจ)
+-- ข้ามขวานที่ Durability หมด: ตัวที่แตกแล้วยังค้างใน Inventory ได้ แต่ยิง server = ดาเมจ 0
 local function getMeleeWeapon()
     local inv = LP:FindFirstChild("Inventory")
     if inv then
         local best, bestDmg = nil, -1
         for _, tool in ipairs(inv:GetChildren()) do
-            if tool:GetAttribute("ToolName") == "GenericAxe" then
+            if tool:GetAttribute("ToolName") == "GenericAxe"
+                and (tool:GetAttribute("Durability") or 100) > 0 then
                 local dmg = tool:GetAttribute("WeaponDamage") or 0
                 if dmg > bestDmg then best, bestDmg = tool, dmg end
             end
@@ -479,10 +482,29 @@ local function getMeleeWeapon()
     -- bestAxeCombat จับ reference ตอน start -> ขวานแตกแล้วยังชี้ตัวที่ถูกย้ายออกจาก Inventory
     -- RequestEquipItem จะ early-return เงียบๆ = ถือของที่ไม่มีอยู่จริง ยิง server ได้ดาเมจ 0
     local fallback = _G.bestAxeCombat
-    if fallback and fallback.Parent and fallback.Parent.Name == "Inventory" then
+    if fallback and fallback.Parent and fallback.Parent.Name == "Inventory"
+        and (fallback:GetAttribute("Durability") or 100) > 0 then
         return fallback
     end
     return nil
+end
+
+-- ถือขวานนี้อยู่แล้ว = ไม่ต้อง Equip ซ้ำ
+-- RequestEquipItem สร้าง ToolHandle ใหม่ทุกครั้ง (Destroy + Clone) -> เรียกทุกรอบ =
+-- ToolHandle ถูกทำลาย/สร้างใหม่รัวๆ ทั้งที่ถืออยู่แล้ว
+-- คืน true = เพิ่ง Equip จริง (caller ควรรอ 1 tick ให้ server เห็นก่อนยิง)
+local function heldTool()
+    local char = LP.Character
+    local th = char and char:FindFirstChild("ToolHandle")
+    local item = th and th:FindFirstChild("OriginalItem")
+    return item and item.Value
+end
+
+local function equipWeapon(Client, weapon)
+    if not weapon then return false end
+    if heldTool() == weapon then return false end
+    pcall(function() Client.InventoryHandler.RequestEquipItem(weapon) end)
+    return true
 end
 
 local function petDamageSession()
@@ -534,21 +556,24 @@ local function petDamageSession()
         stopFloating()
         startHoverLock(hrp0, cf0)
     end
-    pcall(function() Client.InventoryHandler.RequestEquipItem(weapon) end)
-    task.wait(0.15)
+    -- ถือขวานก่อนวาร์ป: ถ้าเพิ่ง Equip ต้องรอ 1 tick ให้ ToolHandle ขึ้นก่อนยิง
+    if equipWeapon(Client, weapon) then task.wait(0.15) end
     summonPets()
 
     local deadline = os.clock() + PET_SESSION_TIMEOUT
     local lastDropAt = os.clock()
     local zeroed = false   -- ลดเลือดไปแล้วหรือยัง (รอ ZERO_WAIT ครั้งเดียวต่อ session)
-    local noDamageRounds = 0
+    -- มี pet ตอนเริ่ม session ไหม: ไม่มีตั้งแต่แรก = ตั้งใจตีเอง ไม่ใช่ pet ตายกลางทาง
+    -- (เดิม break ทันทีเมื่อ petAliveCount()==0 -> session จบใน tick เดียวแล้วเริ่มใหม่ทุก 0.3 วิ
+    --  = วาร์ป + Equip รัวๆ โดยไม่มีอะไรคืบหน้า)
+    local petsAtStart = petAliveCount()
 
     while os.clock() < deadline and monster.Parent and isCharacterAlive() do
         -- Stronghold เปิด/มี Cultist = เลิกตีมอนทันที ไปเคลียร์ Stronghold ก่อน
         if strongholdBusy() then break end
-        -- pet ตายหมด = ตีต่อไม่ได้ดาเมจให้ pet แล้ว จบ session ไปวาร์ปกลับ
+        -- pet ตายหมดกลาง session = ตีต่อไม่ได้ดาเมจให้ pet แล้ว จบ session ไปวาร์ปกลับ
         -- (แต่ถ้าเป้าคือ Cultist ยังต้องตีเองต่อ เพื่อเก็บ soul มาชุบ pet)
-        if not mustKill and petAliveCount() == 0 then break end
+        if not mustKill and petsAtStart > 0 and petAliveCount() == 0 then break end
         -- กลายเป็นศพแล้ว (tag/Dead) = ไม่มีอะไรให้ตี จบ session ไปชุบทันที
         if monster:HasTag("CultistCorpse") or monster:GetAttribute("Dead") == true then
             deadUntil[monster] = os.clock() + 5  -- กันเลือกซ้ำก่อน tag จาก server มา
@@ -578,25 +603,40 @@ local function petDamageSession()
         -- ขวานแตกกลาง session = ไม่มีอะไรทำดาเมจได้ -> จบ session (อย่ายิงด้วย reference เก่า)
         local w = getMeleeWeapon()
         if not w then break end
-        pcall(function() Event:InvokeServer(monster, w, ownerId, hrp.CFrame, false) end)
+        if equipWeapon(Client, w) then task.wait(0.15) end
+
+        -- ต้องลงทะเบียนดาเมจฝั่ง client ก่อนยิง remote (แบบ GenericAxe.CheckHitbox)
+        -- ApplyLocalDamage เขียน HitRegisters["Local_"..id] แล้วคืน id มาให้ส่งไปกับ remote
+        -- เดิมส่ง ownerId ค่าคงที่ที่ไม่มีใครลงทะเบียน -> server หาดาเมจไม่เจอ = ตีไม่เข้า
+        -- คืน nil = ตัวนี้ NotDamageable -> เปลี่ยนเป้าเลย ไม่ต้องรอครบ 5 วิ
+        local dmg = w:GetAttribute("WeaponDamage") or 10
+        local okDmg, id, undo = pcall(function()
+            return Client.EnemyHandler.ApplyLocalDamage(monster, dmg)
+        end)
+        if not okDmg then id, undo = ownerId, nil end   -- module ไม่มี = ถอยไปพฤติกรรมเดิม
+        if id == nil then
+            print(string.format("[Necromancer] %s is NotDamageable - switching target", monster.Name))
+            deadUntil[monster] = os.clock() + 60
+            break
+        end
+        local okHit, res = pcall(function() return Event:InvokeServer(monster, w, id, hrp.CFrame, false) end)
+        -- server ปฏิเสธ = ถอนดาเมจที่ลงทะเบียนไว้ (แบบที่ GenericAxe ทำ)
+        -- ไม่ถอน = HitRegisters ค้างค่าหลอก ทำให้หลอดเลือดเพี้ยน
+        if (not okHit or (type(res) == "table" and res.Success == false)) and undo then
+            pcall(undo)
+        end
 
         local hp = monsterHP(monster)
         if hp and hp < lastHP then
             lastHP = hp
             lastDropAt = os.clock()
-            noDamageRounds = 0
-        elseif os.clock() - lastDropAt > PET_NO_DAMAGE_LIMIT then
-            lastDropAt = os.clock()
-            noDamageRounds = noDamageRounds + 1
-            if noDamageRounds >= 2 then
-                -- 2 รอบที่เลือดไม่ขยับ = ตัวนี้ตีไม่เข้า (NotDamageable / LOS / หลุดระยะ)
-                -- ไม่ตัดสินที่รอบแรก: pet อาจเดินมาช้า ให้โอกาส re-equip + summon 1 ครั้งก่อน
-                deadUntil[monster] = os.clock() + 60
-                break
-            end
-            -- เลือดไม่ลดเลย = pet ตีไม่ติด -> ถือขวานใหม่ + เรียก pet กลับมา
-            pcall(function() Client.InventoryHandler.RequestEquipItem(w) end)
-            summonPets()
+        elseif os.clock() - lastDropAt >= PET_NO_DAMAGE_LIMIT then
+            -- 5 วิแล้วเลือดไม่ลด (หรือเลือด 0 แล้วแต่ไม่ยอมตาย) = ตัวนี้ตีไม่เข้า
+            -- เปลี่ยนตัวเลย ไม่ต้องรอครบ 30 วิ
+            print(string.format("[Necromancer] %s not dying after %ds - switching target",
+                monster.Name, PET_NO_DAMAGE_LIMIT))
+            deadUntil[monster] = os.clock() + 60
+            break
         end
 
         task.wait(hasPets and HIT_INTERVAL_PET or HIT_INTERVAL)
