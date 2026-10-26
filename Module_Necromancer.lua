@@ -1,5 +1,5 @@
 -- ============================================
--- Module_Necromancer.lua 9.25
+-- Module_Necromancer.lua 9.58
 -- Class implementation.
 -- GitHub: https://raw.githubusercontent.com/SugarCreamPremium/99/main/Module_Necromancer.lua
 --
@@ -516,9 +516,12 @@ local function petDamageSession()
     local weapon = getMeleeWeapon()
     if not weapon then return end
 
-    -- Cultist ก่อน = ฆ่าแล้วได้ศพไปชุบ; ไม่มีค่อยไปตีมอนกลางคืนเอา PetDamage
+    -- Cultist ก่อน = ฆ่าแล้วได้ศพไปชุบ (soul มาจากทางนี้ทางเดียว)
+    -- ไม่มี Cultist ค่อยไปตีมอนกลางคืนเอา PetDamageDealt
+    -- แต่ถ้า PetDamage เสร็จแล้ว การไปตีมอนอื่นไม่ได้อะไรเลย (ไม่ให้ soul)
+    -- -> รอ Cultist ตัวใหม่แทน (soul หมด = Cultist ที่มีถูกฆ่าไปหมดแล้ว = เข้าเงื่อนไขนี้พอดี)
     local monster, mustKill = nearestModel(findWildCultists()), true
-    if not monster then
+    if not monster and not M.isPetDamageDone() then
         -- มอนกลางคืน: กรองศพ/ตัวที่เพิ่งตีปิดออกด้วย (findNightMonsters ไม่รู้จัก CultistCorpse)
         local alive = {}
         for _, m in ipairs(findNightMonsters()) do
@@ -532,11 +535,13 @@ local function petDamageSession()
     end
     if not monster then
         -- ไม่มีเป้าเลย = บอกสาเหตุไว้ (wild = 0 เพราะติด StrongholdEnemy หรือยังไม่มีศพ)
+        -- petDamageDone=true = ตั้งใจไม่ตีมอนอื่น รอ Cultist ตัวใหม่ (ตีไปก็ไม่ได้ soul)
         if os.clock() - lastNoTargetLog > 30 then
             lastNoTargetLog = os.clock()
-            print(string.format("[Necromancer] No target - wild=%d night=%d souls=%d pets=%d",
+            print(string.format(
+                "[Necromancer] No target - wild=%d night=%d souls=%d pets=%d petDamageDone=%s",
                 #findWildCultists(), #findNightMonsters(), soulsCount(),
-                petAliveCount()))
+                petAliveCount(), tostring(M.isPetDamageDone())))
         end
         return
     end
