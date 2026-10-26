@@ -1,5 +1,5 @@
 -- ============================================
--- Module_Necromancer.lua 9.58
+-- Module_Necromancer.lua 10.18
 -- Class implementation.
 -- GitHub: https://raw.githubusercontent.com/SugarCreamPremium/99/main/Module_Necromancer.lua
 --
@@ -278,7 +278,6 @@ local lastResurrect = 0
 -- shortcut: assume server ไม่เช็คระยะ; ถ้าชุบไม่ติด 2 ครั้งจะเริ่มวาร์ปไปที่ศพก่อนยิง
 local resurrectWarpMode = false
 local resurrectFails = 0
-local lastSoulShortLog = 0
 
 local function corpseRoot(model)
     return model.PrimaryPart
@@ -340,13 +339,7 @@ local function tryResurrect()
 
     local need = corpse:GetAttribute("SoulsRequired") or 3
     if soulsCount() < need then
-        -- soul ไม่พอ = ชุบไม่ได้ (1 ตัวใช้ need souls) -> บอกไว้ ไม่ให้ดูเหมือนค้างเงียบๆ
-        -- แล้วไปตี Cultist ต่อเอง (petDamageSession จะได้ไม่ต้องเดา)
-        if os.clock() - lastSoulShortLog > 30 then
-            lastSoulShortLog = os.clock()
-            print(string.format("[Necromancer] Not enough souls - have=%d need=%d",
-                soulsCount(), need))
-        end
+        -- soul ไม่พอ = ชุบไม่ได้ (1 ตัวใช้ need souls) -> ไปตี Cultist ต่อเอง
         return
     end
 
@@ -400,7 +393,6 @@ local HIT_INTERVAL = 0.2         -- วิ ระหว่างตีตอน�
 local HIT_INTERVAL_PET = 1       -- วิ ระหว่างตีตอนมี pet (แค่ตีเบาๆ ให้ pet เข้าร่วม)
 local ZERO_WAIT = 1              -- วิ รอหลังลดเลือด ก่อนเริ่มตี (ให้ server apply ก่อน)
 local lastPetSummon = 0
-local lastNoTargetLog = 0
 
 -- pet ไม่วาร์ปตามทันที -> ต้องเรียกกลับมาหาตัวก่อนตีทุกครั้ง
 -- ไม่รอให้ pet เดินมาถึง: ตีเองได้ทันที ส่วน pet ค่อยตามมาสมทบระหว่างตี
@@ -534,14 +526,12 @@ local function petDamageSession()
         monster, mustKill = nearestModel(alive), false
     end
     if not monster then
-        -- ไม่มีเป้าเลย = บอกสาเหตุไว้ (wild = 0 เพราะติด StrongholdEnemy หรือยังไม่มีศพ)
-        -- petDamageDone=true = ตั้งใจไม่ตีมอนอื่น รอ Cultist ตัวใหม่ (ตีไปก็ไม่ได้ soul)
-        if os.clock() - lastNoTargetLog > 30 then
-            lastNoTargetLog = os.clock()
-            print(string.format(
-                "[Necromancer] No target - wild=%d night=%d souls=%d pets=%d petDamageDone=%s",
-                #findWildCultists(), #findNightMonsters(), soulsCount(),
-                petAliveCount(), tostring(M.isPetDamageDone())))
+        -- ไม่มีอะไรให้ตี = กลับไปรอที่ Stronghold
+        -- เช็คระยะก่อน: อยู่ที่ประตูแล้ว = ไม่วาร์ปซ้ำ (loop เรียกทุก 0.3 วิ)
+        local base = _G.finalGateBasePos
+        local curHRP = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+        if base and curHRP and (curHRP.Position - base).Magnitude > 30 then
+            warpBackToStronghold()
         end
         return
     end
