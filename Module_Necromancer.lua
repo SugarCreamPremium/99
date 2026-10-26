@@ -1,5 +1,5 @@
 -- ============================================
--- Module_Necromancer.lua 8.04
+-- Module_Necromancer.lua 8.13
 -- Class implementation.
 -- GitHub: https://raw.githubusercontent.com/SugarCreamPremium/99/main/Module_Necromancer.lua
 --
@@ -25,6 +25,7 @@ local Players = game:GetService("Players")
 local CQ = _G.CLASS_QUESTS or {}
 local CSC = _G.classStatCache or {}
 local CollectionService = game:GetService("CollectionService")
+local RunService = game:GetService("RunService")
 
 local function checkAnyCultistSpawned()
     local fn = _G.checkAnyCultistSpawned
@@ -362,6 +363,7 @@ local function tryResurrect()
         local root = corpseRoot(corpse)
         if hrp and root then
             hrp.CFrame = CFrame.new(root.Position + Vector3.new(0, 5, 0))
+                * CFrame.Angles(math.rad(-90), 0, 0)  -- หันหน้าลงเหมือนวาร์ปอื่น
             task.wait(0.3)
         end
     end
@@ -420,7 +422,38 @@ local function monsterHP(model)
     return nil
 end
 
+-- วาร์ปไปหาเป้า + ล็อกตำแหน่ง/ท่าทางไว้ตลอด (หันหน้าลง -90 องศา)
+-- AlignPosition ของ MainScript ตั้ง target = ตำแหน่งตัวเราเอง -> ไม่กันโน้มถ่วง
+-- BodyVelocity กันโน้มถ่วงได้ แต่ไม่กัน knockback/สคริปต์ที่เขียน CFrame ทับ
+-- -> เขียน CFrame ซ้ำทุก Heartbeat: ร่วงไม่ได้ หันกลับไม่ได้ ระหว่างวาร์ปไปหาเป้า
+local lockHrp, lockCf, lockConn = nil, nil, nil
+
+local function stopHoverLock()
+    if lockConn then
+        pcall(function() lockConn:Disconnect() end)
+        lockConn = nil
+    end
+    lockHrp, lockCf = nil, nil
+end
+
+local function startHoverLock(hrp, cf)
+    if not hrp then return end
+    lockHrp, lockCf = hrp, cf
+    hrp.CFrame = cf
+    if lockConn then return end
+    lockConn = RunService.Heartbeat:Connect(function()
+        if not lockHrp or not lockHrp.Parent then
+            stopHoverLock()
+            return
+        end
+        lockHrp.CFrame = lockCf
+        lockHrp.AssemblyLinearVelocity = Vector3.zero
+        lockHrp.AssemblyAngularVelocity = Vector3.zero
+    end)
+end
+
 local function stopFloating()
+    stopHoverLock()
     local char = LP.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
@@ -428,17 +461,6 @@ local function stopFloating()
         local obj = hrp:FindFirstChild(name)
         if obj then pcall(function() obj:Destroy() end) end
     end
-end
-
--- ลอยด้วย BodyVelocity ความเร็วศูนย์ (แบบ Stronghold): AlignPosition ของ MainScript
--- ตั้ง target = ตำแหน่งตัวเราเองทุก 0.1 วิ -> ไม่กันโน้มถ่วง ตัวร่วงระหว่างรอแล้ววาร์ปกลับ = เด้ง
-local function startHover(hrp)
-    if not hrp or hrp:FindFirstChild("NecroHover") then return end
-    local bv = Instance.new("BodyVelocity")
-    bv.Name = "NecroHover"
-    bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
-    bv.Velocity = Vector3.zero
-    bv.Parent = hrp
 end
 
 -- Necromancer ไม่มี axe ในชุดคลาส -> ต้องหาขวานจริงจาก Inventory (ไม้เท้าไม่ทำดาเมจ)
@@ -503,16 +525,17 @@ local function petDamageSession()
     if not lastHP then return end
 
     -- วาร์ปก่อนเลย (ไม่รอ equip) แล้วค่อยถือขวาน+เรียก pet
+    -- หันหน้าลง -90 องศาทุกครั้งที่วาร์ป และล็อกไว้จนจบ session
     local hrp0 = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
     if hrp0 then
-        hrp0.CFrame = CFrame.new(root.Position + Vector3.new(0, 10, 0))
+        local cf0 = CFrame.new(root.Position + Vector3.new(0, 10, 0))
             * CFrame.Angles(math.rad(-90), 0, 0)
+        -- ถอด AlignPosition ที่ค้างจาก loop อื่นก่อน ไม่งั้นมันจะสู้กับ lock
+        stopFloating()
+        startHoverLock(hrp0, cf0)
     end
     pcall(function() Client.InventoryHandler.RequestEquipItem(weapon) end)
     task.wait(0.15)
-    -- ถอด AlignPosition ที่ค้างจาก loop อื่นก่อน ไม่งั้นมันจะสู้กับ BodyVelocity
-    stopFloating()
-    startHover(hrp0)
     summonPets()
 
     local deadline = os.clock() + PET_SESSION_TIMEOUT
@@ -536,9 +559,9 @@ local function petDamageSession()
         local r = monster:FindFirstChild("HumanoidRootPart") or monster.PrimaryPart
         if not (hrp and r) then break end
 
-        hrp.CFrame = CFrame.new(r.Position + Vector3.new(0, 10, 0))
-            * CFrame.Angles(math.rad(-90), 0, 0)
-        startHover(hrp)
+        -- เป้าขยับ -> ย้าย lock ตาม (ยังหันหน้าลง -90 องศาเหมือนเดิม)
+        startHoverLock(hrp, CFrame.new(r.Position + Vector3.new(0, 10, 0))
+            * CFrame.Angles(math.rad(-90), 0, 0))
 
         -- ไม่มี pet = วาร์ปมาแล้ว ลดเลือด รอ 1 วิ แล้วตีรัว 0.2 วิจนตาย (แบบ module อื่น)
         -- มี pet = ปล่อยเลือดไว้ให้ pet ตีเก็บ PetDamageDealt ตีแค่ 1 วิ/ครั้ง
