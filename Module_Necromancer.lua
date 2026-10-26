@@ -1,5 +1,5 @@
 -- ============================================
--- Module_Necromancer.lua
+-- Module_Necromancer.lua 8.04
 -- Class implementation.
 -- GitHub: https://raw.githubusercontent.com/SugarCreamPremium/99/main/Module_Necromancer.lua
 --
