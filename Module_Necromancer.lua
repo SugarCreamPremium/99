@@ -1,5 +1,5 @@
 -- ============================================
--- Module_Necromancer.lua 10.18
+-- Module_Necromancer.lua 10.48
 -- Class implementation.
 -- GitHub: https://raw.githubusercontent.com/SugarCreamPremium/99/main/Module_Necromancer.lua
 --
@@ -383,7 +383,8 @@ end
 -- ============================================
 -- Pet damage (ระหว่างรอ Stronghold เปิด)
 -- client สั่งให้ pet ตีไม่ได้ -> ต้องเข้าตีเองเพื่อให้ pet เข้าร่วม แล้วรอเลือดลด
--- ห้าม zeroEnemyHealth เด็ดขาด (เลือด 0 = pet ไม่มีอะไรให้ตี)
+-- ห้าม zeroEnemyHealth ขณะ PetDamage ยังไม่ถึงเกณฑ์ (เลือด 0 = pet ไม่มีอะไรให้ตี)
+-- ถึงเกณฑ์แล้ว = ลดเลือดแล้วตีเอง (pet ตีไปก็ไม่นับ ขาดแค่ soul)
 -- ============================================
 local petBusy = false
 local PET_SESSION_TIMEOUT = 30   -- วิ ต่อมอน 1 ตัว
@@ -585,9 +586,11 @@ local function petDamageSession()
 
         -- ไม่มี pet = วาร์ปมาแล้ว ลดเลือด รอ 1 วิ แล้วตีรัว 0.2 วิจนตาย (แบบ module อื่น)
         -- มี pet = ปล่อยเลือดไว้ให้ pet ตีเก็บ PetDamageDealt ตีแค่ 1 วิ/ครั้ง
+        -- PetDamage ถึงเกณฑ์แล้ว = pet ตีไปก็ไม่นับอะไร ขาดแค่ soul -> ลดเลือดแล้วตีเองเลย
         -- อ่าน petAliveCount() ไม่ใช่ CurrentPets: attribute ดีเลย์, pet ตายแล้วค้างค่าเดิมได้
         local hasPets = petAliveCount() > 0
-        if not hasPets then
+        local farmSelf = not hasPets or M.isPetDamageDone()
+        if farmSelf then
             pcall(function() _G.zeroEnemyHealth(monster) end)
             if not zeroed then
                 zeroed = true
@@ -634,7 +637,7 @@ local function petDamageSession()
             break
         end
 
-        task.wait(hasPets and HIT_INTERVAL_PET or HIT_INTERVAL)
+        task.wait(farmSelf and HIT_INTERVAL or HIT_INTERVAL_PET)
     end
     stopFloating()
 
