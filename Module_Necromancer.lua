@@ -52,6 +52,8 @@ local function findWildCultists()
             and m:GetAttribute("Resurrected") ~= true
             and m:GetAttribute("NotAttackable") ~= true
             and m:GetAttribute("Dead") ~= true
+            and m:GetAttribute("Resource") ~= "IceBlock"  -- ก้อนน้ำแข็ง = ไม่ใช่เป้า (ตีเท่าไรก็ไม่ตาย)
+            and not m:HasTag("IceBlock")
             and not m:HasTag("CultistCorpse")  -- ตายแล้ว = ศพ ไม่ใช่เป้าตี
             and not (deadUntil[m] and os.clock() < deadUntil[m])
             and not Players:GetPlayerFromCharacter(m)
@@ -259,6 +261,7 @@ local lastResurrect = 0
 -- shortcut: assume server ไม่เช็คระยะ; ถ้าชุบไม่ติด 2 ครั้งจะเริ่มวาร์ปไปที่ศพก่อนยิง
 local resurrectWarpMode = false
 local resurrectFails = 0
+local lastSoulShortLog = 0
 
 local function corpseRoot(model)
     return model.PrimaryPart
@@ -266,22 +269,29 @@ local function corpseRoot(model)
         or model:FindFirstChildWhichIsA("BasePart", true)
 end
 
+-- เลือกศพที่ soul พอชุบก่อน (ถ้ามี) แล้วค่อยเอาตัวใกล้สุด
+-- ไม่งั้นศพแพงที่อยู่ใกล้จะบล็อกศพถูกที่ soul พอ ทั้งที่ชุบได้
 local function nearestCorpse()
     local myPos = LP.Character and LP.Character:GetPivot().Position
-    local best, bestDist
+    local souls = soulsCount()
+    local best, bestDist, nearestAny, nearestDist
     for _, model in ipairs(CollectionService:GetTagged("CultistCorpse")) do
         if model.Parent and model:GetAttribute("Resurrected") ~= true
             and model:GetAttribute("SoulsRequired") then
             local root = corpseRoot(model)
             if root then
                 local dist = myPos and (root.Position - myPos).Magnitude or 0
-                if not bestDist or dist < bestDist then
+                if not nearestDist or dist < nearestDist then
+                    nearestAny, nearestDist = model, dist
+                end
+                if souls >= (model:GetAttribute("SoulsRequired") or 3)
+                    and (not bestDist or dist < bestDist) then
                     best, bestDist = model, dist
                 end
             end
         end
     end
-    return best
+    return best or nearestAny
 end
 
 local function releaseOnePet()
@@ -312,7 +322,16 @@ local function tryResurrect()
     if not corpse then return end
 
     local need = corpse:GetAttribute("SoulsRequired") or 3
-    if soulsCount() < need then return end
+    if soulsCount() < need then
+        -- soul ไม่พอ = ชุบไม่ได้ (1 ตัวใช้ need souls) -> บอกไว้ ไม่ให้ดูเหมือนค้างเงียบๆ
+        -- แล้วไปตี Cultist ต่อเอง (petDamageSession จะได้ไม่ต้องเดา)
+        if os.clock() - lastSoulShortLog > 30 then
+            lastSoulShortLog = os.clock()
+            print(string.format("[Necromancer] Not enough souls - have=%d need=%d",
+                soulsCount(), need))
+        end
+        return
+    end
 
     local maxPets = LP:GetAttribute("MaxPets") or 6
     if (LP:GetAttribute("CurrentPets") or 0) >= maxPets then
@@ -359,7 +378,9 @@ local petBusy = false
 local PET_SESSION_TIMEOUT = 30   -- วิ ต่อมอน 1 ตัว
 local PET_NO_DAMAGE_LIMIT = 10   -- วิ ที่เลือดไม่ลด = pet ตีไม่ติด -> ตีใหม่
 local PET_SUMMON_COOLDOWN = 5    -- วิ กันยิง RequestSummonAllPets รัวเกิน
-local HIT_INTERVAL = 0.2         -- วิ ระหว่างตี (Woodsman/Alien ใช้ 0.1, เผื่อ server)
+local HIT_INTERVAL = 0.2         -- วิ ระหว่างตีตอนไม่มี pet (ลดเลือดเองแล้วตีเอง)
+local HIT_INTERVAL_PET = 1       -- วิ ระหว่างตีตอนมี pet (แค่ตีเบาๆ ให้ pet เข้าร่วม)
+local ZERO_WAIT = 1              -- วิ รอหลังลดเลือด ก่อนเริ่มตี (ให้ server apply ก่อน)
 local lastPetSummon = 0
 local lastNoTargetLog = 0
 
@@ -462,6 +483,7 @@ local function petDamageSession()
 
     local deadline = os.clock() + PET_SESSION_TIMEOUT
     local lastDropAt = os.clock()
+    local zeroed = false   -- ลดเลือดไปแล้วหรือยัง (รอ ZERO_WAIT ครั้งเดียวต่อ session)
 
     while os.clock() < deadline and monster.Parent and isCharacterAlive() do
         -- Stronghold เปิด/มี Cultist = เลิกตีมอนทันที ไปเคลียร์ Stronghold ก่อน
@@ -482,10 +504,15 @@ local function petDamageSession()
         hrp.CFrame = CFrame.new(r.Position + Vector3.new(0, 10, 0))
             * CFrame.Angles(math.rad(-90), 0, 0)
 
-        -- ไม่มี pet = ไม่มีใครช่วยตี ต้องลดเลือดเองก่อนตีทุกครั้ง (แบบ BGH)
-        -- ไม่งั้นตีเท่าไรก็ไม่ตาย; มี pet = ปล่อยเลือดไว้ให้ pet ตีเก็บ PetDamageDealt
-        if (LP:GetAttribute("CurrentPets") or 0) == 0 then
+        -- ไม่มี pet = ไม่มีใครช่วยตี ต้องลดเลือดเองก่อน (แบบ BGH) แล้วรอ 1 วิให้ server apply ก่อนเริ่มตี
+        -- มี pet = ปล่อยเลือดไว้ให้ pet ตีเก็บ PetDamageDealt (ไม่ลดเลือด)
+        local hasPets = (LP:GetAttribute("CurrentPets") or 0) > 0
+        if not hasPets then
             pcall(function() _G.zeroEnemyHealth(monster) end)
+            if not zeroed then
+                zeroed = true
+                task.wait(ZERO_WAIT)   -- รอครั้งเดียว ไม่ใช่ทุก tick
+            end
         end
 
         local w = getMeleeWeapon() or weapon
@@ -502,7 +529,7 @@ local function petDamageSession()
             lastDropAt = os.clock()
         end
 
-        task.wait(HIT_INTERVAL)
+        task.wait(hasPets and HIT_INTERVAL_PET or HIT_INTERVAL)
     end
     stopFloating()
 
