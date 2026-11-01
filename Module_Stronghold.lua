@@ -1,5 +1,5 @@
 -- ============================================
--- Module_Stronghold.lua / 9.13
+-- Module_Stronghold.lua / 11.22
 -- Stronghold fight, chest, round, and reset flow.
 -- ============================================
 
@@ -46,6 +46,14 @@ function M.run(C)
     local isStrongholdEnemy = C.isStrongholdEnemy
     local zeroEnemyHealth = C.zeroEnemyHealth
 
+    -- Witch with an unfinished HitPotion quest: only the Witch Potion is used in the fight
+    -- (no axe hits, no HP zeroing). Module_Witch decides; false when it is not running.
+    local function potionOnly()
+        local w = _G.WSM_Witch
+        return w ~= nil and type(w.potionOnly) == "function" and w.potionOnly() == true
+    end
+    local potionWasOn = false
+
 -- ============================================
 -- STEP 6: Fight loop - วาร์ปเข้าไปหา Cultist "ทุกตัว" ทีละตัว ปรับเลือดแล้วตีตัวนั้นจากจุดใกล้
 -- ทำครบรอบแล้วตัวไหนยังไม่ตาย = วนทำใหม่อีกรอบ ครบ 2 รอบเต็มยังไม่ตาย
@@ -57,9 +65,10 @@ updateStatus("Fighting Cultists...")
 
 -- Re-equip axe ก่อนเริ่ม fight เผื่อถูก unequip ระหว่างรอ
 do
-    Client.InventoryHandler.RequestEquipItem(bestAxeCombat)
+    local skipAxe = potionOnly() -- potion only: keep the Witch Potion, do not equip the axe
+    if not skipAxe then Client.InventoryHandler.RequestEquipItem(bestAxeCombat) end
     local waited = 0
-    while waited < 3 do
+    while waited < 3 and not skipAxe do
         local char = LocalPlayer.Character
         local th = char and char:FindFirstChild("ToolHandle")
         if th and th:FindFirstChild("OriginalItem") then
@@ -257,11 +266,17 @@ local function doOneRound()
             local hrp = getLiveParts()
             if not hrp then task.wait(0.2) continue end
 
+            -- Witch potion-only mode (see potionOnly): no axe, no HP zero. When it ends mid-round
+            -- (quest done) the axe is equipped again right away.
+            local po = potionOnly()
+            local potionJustEnded = potionWasOn and not po
+            potionWasOn = po
+
             -- re-equip axe ก่อนตีทุก tick (เฉพาะตอนไม่ใช้ cannon)
-            if not useCannon then
+            if not useCannon and not po then
                 local char = LocalPlayer.Character
                 local th = char and char:FindFirstChild("ToolHandle")
-                if not (th and th:FindFirstChild("OriginalItem")) then
+                if potionJustEnded or not (th and th:FindFirstChild("OriginalItem")) then
                     Client.InventoryHandler.RequestEquipItem(bestAxeCombat)
                     task.wait(0.1)
                     char = LocalPlayer.Character
@@ -310,7 +325,8 @@ local function doOneRound()
                 -- ตีทุกตัวพร้อมกันจากจุด centroid เดียวกัน
                 -- (ถ้า useCannon → skip - background loop ยิงให้แล้ว)
                 -- (Vampire: ใช้ Scythe แทน axe + keepHPOne ถ้า Lifesteal ยังไม่เสร็จ)
-                if not useCannon then
+                -- (Witch potion-only: no axe hits, Module_Witch throws the potion instead)
+                if not useCannon and not po then
                     -- เลือก weapon: Scythe ถ้า Vampire (ถือ Scythe จริง), axe ถ้า class อื่น
                     local weapon
                     if isVampire and vampireScythe then
@@ -349,7 +365,7 @@ local function doOneRound()
             -- Phase 2: ตัวไหนทำครบ FINISH_MODE_AFTER รอบแล้วยังไม่ตาย
             -- = โหมดเก็บตาย: วาร์ปตามตัวมัน + ปรับเลือดเร็วก่อน "ทุกตี" (ไม่ต้องรอ) ตีซ้ำจนตาย
             for _, cultist in ipairs(cultists) do
-                if cultist and cultist.Parent and (surviveCounts[cultist] or 0) >= FINISH_MODE_AFTER then
+                if not po and cultist and cultist.Parent and (surviveCounts[cultist] or 0) >= FINISH_MODE_AFTER then
                     print("[Fight] Cultist survived " .. FINISH_MODE_AFTER
                         .. " full rounds - finish mode: quick zero + hit until dead")
                     while cultist.Parent and not isStrongholdCleared() do
@@ -462,15 +478,22 @@ while completedRounds < TOTAL_ROUNDS do
     print(string.format("\n[Step 6] Round %d/%d", completedRounds+1, TOTAL_ROUNDS))
     updateStatus(string.format("Round %d/%d - Fighting...", completedRounds+1, TOTAL_ROUNDS))
 
+    -- Round is running: Module_Witch waits for it to end (and for the diamonds) before force leaving
+    _G.WSM_StrongholdRound = true
+
     -- Re-equip ทุกรอบ: ถ้า useCannon → Laser Cannon, ไม่งั้น axe
-    if useCannon and cannonTool then
+    -- (Witch potion-only: leave the equipped potion alone)
+    local skipAxe = potionOnly()
+    if skipAxe then
+        -- keep the Witch Potion
+    elseif useCannon and cannonTool then
         pcall(function() Client.InventoryHandler.RequestEquipItem(cannonTool) end)
     else
         Client.InventoryHandler.RequestEquipItem(bestAxeCombat)
     end
     do
         local waited = 0
-        while waited < 3 do
+        while waited < 3 and not skipAxe do
             local char = LocalPlayer.Character
             local th = char and char:FindFirstChild("ToolHandle")
             if th and th:FindFirstChild("OriginalItem") then
@@ -710,6 +733,7 @@ while completedRounds < TOTAL_ROUNDS do
     end
     print(("[OK] Collected %d diamonds (round %d)"):format(collected, completedRounds))
     updateStatus(("✅ Collected %d Diamonds"):format(collected))
+    _G.WSM_StrongholdRound = false -- round and diamond pickup finished
 
     -- เช็คเงื่อนไข Teleport Lobby (Diamonds + Class Lv.3 ต้องครบทั้งคู่)
     -- ถ้าตั้ง Diamonds > 0 + BuyClass + UpgradeClass → ต้องครบทั้ง Diamonds ถึง AND Class Lv.3
@@ -828,7 +852,7 @@ destroyFlyBody() -- ถอน BodyVelocity คืนการควบคุม�
 
 print("\n=== Sugar Hub Complete ===")
 print("✅ Stronghold sequence finished! (3 rounds)")
-sendHorstDescription()
+sendHorstDescription(true)  -- สรุปรอบสุดท้าย = บังคับส่ง ไม่ต้องรอ throttle
 checkDiamondsGoalAndSendDone()
 
 -- รอจนครบ 100 วัน ก่อนรีเซ็ต
