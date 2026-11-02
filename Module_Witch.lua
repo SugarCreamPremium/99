@@ -499,7 +499,6 @@ local function leaveToLobby(reason)
     if tick() - lastLeaveAt < 20 then return end
     lastLeaveAt = tick()
     leaveOutside(false)
-    print("[Witch] " .. reason .. " - leaving for the Lobby")
     status("Witch quest done - teleporting to Lobby")
     local fn = _G.forceTeleportLobby
     if fn then
@@ -559,6 +558,7 @@ function M.mainLoop()
         local busy = fighting or roundActive() or strongholdOpen()
 
         if hitCount() >= goal then
+            pcall(_G.WSM_QuestDone, "Witch") -- unified "[Quest] Done" line, printed once
             -- Quest complete. Outside a round: leave right away. Inside a round: play to the end,
             -- the Stronghold flow collects the diamonds, then this leaves right away.
             if not busy then
