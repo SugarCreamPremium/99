@@ -1,5 +1,5 @@
 -- ============================================
--- Module_Stronghold.lua / 11.22
+-- Module_Stronghold.lua
 -- Stronghold fight, chest, round, and reset flow.
 -- ============================================
 
@@ -434,44 +434,6 @@ end
 -- Flag: ติดเมื่อ quest ของ main class เสร็จแล้ว รอให้ round ปัจจุบันจบ + เก็บเพชรก่อน teleport
 local questReadyToLeave = false
 
--- Quest progress watcher: แสดง % ทุกครั้งที่ quest stat อัปเดต (ทุกที่ - Lobby/Stronghold/ฟาร์ม)
-if type(Config.UpgradeClass) == "table" and type(Config.UpgradeClass[1]) == "string" then
-    local mainClass = Config.UpgradeClass[1]
-    local cp = LocalPlayer:FindFirstChild("ClassProgress")
-    local folder = cp and cp:FindFirstChild(mainClass)
-    if folder then
-        local lastReport = 0
-        local function reportQuestProgress()
-            -- cooldown 1 วิ กัน spam
-            if os.clock() - lastReport < 1 then return end
-            lastReport = os.clock()
-            local lvl = folder:GetAttribute("Level") or 1
-            if lvl >= 3 then return end
-            local reqs = CLASS_QUESTS[mainClass] and CLASS_QUESTS[mainClass][lvl + 1]
-            if not reqs then return end
-            local totalPct, count = 0, 0
-            for statKey, goal in pairs(reqs) do
-                local have = folder:GetAttribute(statKey) or 0
-                if type(have) == "number" and goal > 0 then
-                    totalPct = totalPct + math.min(have / goal, 1) * 100
-                    count = count + 1
-                end
-            end
-            if count > 0 then
-                local avgPct = math.floor(totalPct / count)
-                print(string.format("[Quest] %s -> Lv.%d: %d%%", mainClass, lvl + 1, avgPct))
-            end
-        end
-        for statKey, _ in pairs(CLASS_QUESTS[mainClass] and CLASS_QUESTS[mainClass][2] or {}) do
-            folder:GetAttributeChangedSignal(statKey):Connect(reportQuestProgress)
-        end
-        for statKey, _ in pairs(CLASS_QUESTS[mainClass] and CLASS_QUESTS[mainClass][3] or {}) do
-            folder:GetAttributeChangedSignal(statKey):Connect(reportQuestProgress)
-        end
-        reportQuestProgress()  -- แสดงค่าเริ่มต้น
-    end
-end
-
 local diamondsReadyToTeleport = false  -- flag: รอให้จบรอบ แล้ว Teleport
 
 while completedRounds < TOTAL_ROUNDS do
@@ -548,18 +510,16 @@ while completedRounds < TOTAL_ROUNDS do
                 local reqs = CLASS_QUESTS[mainClass] and CLASS_QUESTS[mainClass][goalLevel]
                 if reqs then
                     local allMet = true
-                    local statProgress = {}
                     for statKey, goal in pairs(reqs) do
                         local have = statSource[statKey] or 0
-                        table.insert(statProgress, string.format("%s %d/%d", statKey, have, goal))
                         if type(have) ~= "number" or have < goal then
                             allMet = false
                         end
                     end
                     if allMet then
                         questReadyToLeave = true
-                        print(string.format("[Quest] %s ready -> Lv.%d, leaving after this round (%s)",
-                            mainClass, goalLevel, table.concat(statProgress, ", ")))
+                        -- unified "[Quest] Done" line (fallback: printed once, the class module may have printed it already)
+                        pcall(_G.WSM_QuestDone, mainClass)
                         updateStatus("Quest done - finishing round")
                     end
                 end
@@ -767,8 +727,6 @@ while completedRounds < TOTAL_ROUNDS do
 
     -- ถ้า quest พร้อมอัปแล้ว → ออกจาก Stronghold กลับ lobby (หลังเก็บเพchรเสร็จ)
     if questReadyToLeave then
-        local mainClass = Config.UpgradeClass and Config.UpgradeClass[1] or "?"
-        print(string.format("[Quest] %s quest complete - leaving for lobby", mainClass))
         updateStatus("Teleporting to lobby...")
         task.wait(2)
         local LOBBY_PLACE_ID = 79546208627805
