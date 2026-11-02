@@ -1,5 +1,5 @@
 -- ============================================
--- Module_Woodsman.lua / 10.21
+-- Module_Woodsman.lua
 -- Class implementation.
 -- GitHub: https://raw.githubusercontent.com/SugarCreamPremium/99/main/Module_Woodsman.lua
 --
@@ -338,6 +338,7 @@ function M.axeKillsLoop()
     end
 
     local done = M.isAxeKillsDone()
+    pcall(_G.WSM_QuestDone, "Woodsman") -- unified "[Quest] Done" line (only when every Woodsman stat is done)
     warpBackToStronghold()
     print("[Woodsman] Loop ended")
     return done and "done" or "impossible"
@@ -462,6 +463,7 @@ function M.cutTreeLoop()
     end
 
     local done = M.isCutTreeDone()
+    pcall(_G.WSM_QuestDone, "Woodsman") -- unified "[Quest] Done" line (only when every Woodsman stat is done)
     warpBackToStronghold()
     print("[Woodsman] Loop ended")
     return done and "done" or "impossible"
