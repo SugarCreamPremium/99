@@ -1,5 +1,5 @@
 -- ============================================
--- Module_Vampire.lua / 10.21
+-- Module_Vampire.lua
 -- Complete Vampire class implementation migrated from MainScript.lua.
 -- ============================================
 
@@ -274,15 +274,7 @@ function M.nightLoop()
             if not ok1 then
                 warn(string.format("[Vampire] M.isAllQuestDone() error: %s", tostring(result1)))
             elseif result1 then
-                print(string.format("[Vampire] Quests done: Lifesteal %d/%d, DealDamage %d/%d",
-                    (CSC["Vampire"] and CSC["Vampire"]["LifestealHealing"] or 0),
-                    (CQ["Vampire"]
-                        and CQ["Vampire"][(LP:GetAttribute("ClassLevel") or 1) + 1]
-                        and CQ["Vampire"][(LP:GetAttribute("ClassLevel") or 1) + 1].LifestealHealing or 0),
-                    (CSC["Vampire"] and CSC["Vampire"]["DealDamage"] or 0),
-                    (CQ["Vampire"]
-                        and CQ["Vampire"][(LP:GetAttribute("ClassLevel") or 1) + 1]
-                        and CQ["Vampire"][(LP:GetAttribute("ClassLevel") or 1) + 1].DealDamage or 0)))
+                pcall(_G.WSM_QuestDone, "Vampire") -- unified "[Quest] Done" line, printed once
                 local restoreOk, restoreErr = pcall(M.restoreHP)
                 if not restoreOk then
                     warn(string.format("[Vampire] M.restoreHP() error: %s", tostring(restoreErr)))
@@ -300,16 +292,6 @@ function M.nightLoop()
                 end
                 return
             end
-
-            -- Quest ยังไม่เสร็จ → print progress
-            local lvlNow = LP:GetAttribute("ClassLevel") or 1
-            local reqsNow = CQ["Vampire"] and CQ["Vampire"][lvlNow + 1]
-            local lhNow = CSC["Vampire"] and CSC["Vampire"]["LifestealHealing"] or 0
-            local ddNow = CSC["Vampire"] and CSC["Vampire"]["DealDamage"] or 0
-            local lhGoalNow = (reqsNow and reqsNow.LifestealHealing) or 0
-            local ddGoalNow = (reqsNow and reqsNow.DealDamage) or 0
-            print(string.format("[Vampire] Quest: Lifesteal %d/%d, DealDamage %d/%d (ClassLevel=%d)",
-                lhNow, lhGoalNow, ddNow, ddGoalNow, lvlNow))
 
             -- Pre-check 2: Stronghold เปิด? → return (main flow handle)
             local cultistOk, cultistResult = pcall(checkAnyCultistSpawned)
@@ -430,16 +412,7 @@ function M.nightLoop()
                 if not questOk then
                     warn(string.format("[Vampire] M.isAllQuestDone() error: %s", tostring(questResult)))
                 elseif questResult then
-                    local lvl = LP:GetAttribute("ClassLevel") or 1
-                    local lh = CSC["Vampire"]
-                        and CSC["Vampire"]["LifestealHealing"] or 0
-                    local dd = CSC["Vampire"]
-                        and CSC["Vampire"]["DealDamage"] or 0
-                    local reqs = CQ["Vampire"] and CQ["Vampire"][lvl + 1]
-                    local lhGoal = (reqs and reqs.LifestealHealing) or 0
-                    local ddGoal = (reqs and reqs.DealDamage) or 0
-                    print(string.format("[Vampire] Quests done: Lifesteal %d/%d, DealDamage %d/%d",
-                        lh, lhGoal, dd, ddGoal))
+                    pcall(_G.WSM_QuestDone, "Vampire") -- unified "[Quest] Done" line, printed once
                     local restoreOk2, restoreErr2 = pcall(M.restoreHP)
                     if not restoreOk2 then
                         warn(string.format("[Vampire] M.restoreHP() error: %s", tostring(restoreErr2)))
