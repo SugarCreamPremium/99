@@ -1,5 +1,5 @@
 -- ============================================
--- Module_Necromancer.lua 10.48
+-- Module_Necromancer.lua
 -- Class implementation.
 -- GitHub: https://raw.githubusercontent.com/SugarCreamPremium/99/main/Module_Necromancer.lua
 --
@@ -684,6 +684,7 @@ function M.mainLoop()
         end
         task.wait(0.3)
     end
+    pcall(_G.WSM_QuestDone, "Necromancer") -- unified "[Quest] Done" line, printed once
     print("[Necromancer] Loop ended")
     if isCharacterAlive() then warpBackToStronghold() end
 end
