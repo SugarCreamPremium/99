@@ -1,5 +1,5 @@
 -- ============================================
--- Module_Alien.lua / 10.21
+-- Module_Alien.lua
 -- Complete Alien Scientist class implementation migrated from MainScript.lua.
 -- ============================================
 
@@ -228,12 +228,7 @@ function M.nightLoop()
             if not questOk then
                 warn(string.format("[AlienScientist] M.isAllQuestDone() error: %s", tostring(questResult)))
             elseif questResult then
-                local lvl = LP:GetAttribute("ClassLevel") or 1
-                local reqs = CQ["Alien Scientist"] and CQ["Alien Scientist"][lvl + 1]
-                local goal = (reqs and reqs.Dissolves) or 0
-                local have = CSC["Alien Scientist"]
-                    and CSC["Alien Scientist"]["Dissolves"] or 0
-                print(string.format("[AlienScientist] Quest done: Dissolves %d/%d", have, goal))
+                pcall(_G.WSM_QuestDone, "Alien Scientist") -- unified "[Quest] Done" line, printed once
                 disableFloating()
                 warpBackToStronghold()
                 return
