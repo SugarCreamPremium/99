@@ -1,5 +1,5 @@
 -- ============================================
--- Module_BGH.lua / 10.21
+-- Module_BGH.lua
 -- Complete Big Game Hunter implementation migrated from MainScript.lua.
 -- ============================================
 
@@ -425,16 +425,7 @@ function M.nightLoop()
     -- reason: "quest" หรือ "peltlist" — ใช้ print ที่เหมาะสม
     local function bghExitAndCleanup(reason)
         if reason == "quest" then
-            local lvl = LP:GetAttribute("ClassLevel") or 1
-            local reqs = CQ["Big Game Hunter"] and CQ["Big Game Hunter"][lvl + 1]
-            local goal_consume = (reqs and reqs.ConsumePelt) or 0
-            local goal_wolves = (reqs and reqs.WolfKills) or 0
-            local have_consume = CSC["Big Game Hunter"]
-                and CSC["Big Game Hunter"]["ConsumePelt"] or 0
-            local have_wolves = CSC["Big Game Hunter"]
-                and CSC["Big Game Hunter"]["WolfKills"] or 0
-            print(string.format("[BigGameHunter] Quests done: ConsumePelt %d/%d, WolfKills %d/%d",
-                have_consume, goal_consume, have_wolves, goal_wolves))
+            pcall(_G.WSM_QuestDone, "Big Game Hunter") -- unified "[Quest] Done" line, printed once
         elseif reason == "peltlist" then
             print("[BigGameHunter] All PeltList types Complete - exiting")
         end
