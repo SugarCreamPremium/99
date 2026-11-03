@@ -19,6 +19,13 @@
 -- ============================================
 
 local M = {}
+local Log = _G.WSM_Log or {
+    dev = function() end,
+    err = function(reason, nextStep)
+        warn("Error : " .. tostring(reason) .. " / " .. tostring(nextStep))
+    end,
+}
+
 
 local LP = _G.LocalPlayer or game:GetService("Players").LocalPlayer
 local Players = game:GetService("Players")
@@ -239,7 +246,7 @@ local claimFails = 0
 local function setupSoulHook()
     local Client = getClient()
     if not Client or not Client.Events then
-        warn("[Necromancer] Client.Events unavailable, souls disabled")
+        Log.err("[Necromancer] Client.Events unavailable", "soul collection disabled, the Necromancer loop will not start")
         return false
     end
     Client.Events.AddSoul:Connect(function(pos, token)
@@ -259,7 +266,7 @@ local function setupSoulHook()
                     claimFails = claimFails + 1
                     if claimFails >= 2 then
                         soulWarpMode = true
-                        print("[Necromancer] Soul claim needs proximity, switching to warp mode")
+                        Log.dev("[Necromancer] Soul claim needs proximity, switching to warp mode")
                     end
                 else
                     claimFails = 0
@@ -372,7 +379,7 @@ local function tryResurrect()
             resurrectFails = resurrectFails + 1
             if resurrectFails >= 2 then
                 resurrectWarpMode = true
-                print("[Necromancer] Resurrect needs proximity, switching to warp mode")
+                Log.dev("[Necromancer] Resurrect needs proximity, switching to warp mode")
             end
         else
             resurrectFails = 0
@@ -613,7 +620,7 @@ local function petDamageSession()
         end)
         if not okDmg then id, undo = ownerId, nil end   -- module ไม่มี = ถอยไปพฤติกรรมเดิม
         if id == nil then
-            print(string.format("[Necromancer] %s is NotDamageable - switching target", monster.Name))
+            Log.dev(string.format("[Necromancer] %s is NotDamageable - switching target", monster.Name))
             deadUntil[monster] = os.clock() + 60
             break
         end
@@ -631,7 +638,7 @@ local function petDamageSession()
         elseif os.clock() - lastDropAt >= PET_NO_DAMAGE_LIMIT then
             -- 5 วิแล้วเลือดไม่ลด (หรือเลือด 0 แล้วแต่ไม่ยอมตาย) = ตัวนี้ตีไม่เข้า
             -- เปลี่ยนตัวเลย ไม่ต้องรอครบ 30 วิ
-            print(string.format("[Necromancer] %s not dying after %ds - switching target",
+            Log.dev(string.format("[Necromancer] %s not dying after %ds - switching target",
                 monster.Name, PET_NO_DAMAGE_LIMIT))
             deadUntil[monster] = os.clock() + 60
             break
@@ -670,12 +677,12 @@ local running = false
 function M.mainLoop()
     if not M.isNecromancer then return end
     if not resolveRemotes() then
-        warn("[Necromancer] Remotes unavailable")
+        Log.err("[Necromancer] remotes unavailable", "the Necromancer loop is not started")
         return
     end
     if not setupSoulHook() then return end
 
-    print("[Necromancer] Loop started")
+    Log.dev("[Necromancer] Loop started")
     -- ไม่ exit ตอนตาย: รอ respawn แล้วทำต่อ (ไม่มี resume() ให้เรียกจาก Stronghold)
     while not M.isAllQuestDone() do
         if isCharacterAlive() then
@@ -685,7 +692,7 @@ function M.mainLoop()
         task.wait(0.3)
     end
     pcall(_G.WSM_QuestDone, "Necromancer") -- unified "[Quest] Done" line, printed once
-    print("[Necromancer] Loop ended")
+    Log.dev("[Necromancer] Loop ended")
     if isCharacterAlive() then warpBackToStronghold() end
 end
 
