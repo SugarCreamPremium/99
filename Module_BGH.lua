@@ -4,6 +4,13 @@
 -- ============================================
 
 local M = {}
+local Log = _G.WSM_Log or {
+    dev = function() end,
+    err = function(reason, nextStep)
+        warn("Error : " .. tostring(reason) .. " / " .. tostring(nextStep))
+    end,
+}
+
 local BGH = M
 local LP = _G.LocalPlayer or game:GetService("Players").LocalPlayer
 local CQ = _G.CLASS_QUESTS or {}
@@ -336,7 +343,7 @@ end  -- end of BGH do block
 
 function M.nightLoop()
     if not BGH.isBigGameHunter then return end
-    print("[BigGameHunter] Loop started")
+    Log.dev("[BigGameHunter] Loop started")
 
     local PELT_SEARCH_RADIUS = 50
     local HOVER_HEIGHT = 20
@@ -427,7 +434,7 @@ function M.nightLoop()
         if reason == "quest" then
             pcall(_G.WSM_QuestDone, "Big Game Hunter") -- unified "[Quest] Done" line, printed once
         elseif reason == "peltlist" then
-            print("[BigGameHunter] All PeltList types Complete - exiting")
+            Log.dev("[BigGameHunter] All PeltList types Complete - exiting")
         end
         disableFloating()
         warpBackToStronghold()
@@ -494,9 +501,9 @@ function M.nightLoop()
         -- Pre-check 2: Cultist spawned? → return (Stronghold flow takes over)
         local cultistOk, cultistResult = pcall(checkAnyCultistSpawned)
         if not cultistOk then
-            warn(string.format("[BigGameHunter] checkAnyCultistSpawned() error: %s", tostring(cultistResult)))
+            Log.err(string.format("[BigGameHunter] Stronghold check failed: %s", tostring(cultistResult)), "continuing the night loop")
         elseif cultistResult then
-            print("[BigGameHunter] Stronghold opened, pausing NightLoop")
+            Log.dev("[BigGameHunter] Stronghold opened, pausing NightLoop")
             bghExitForStronghold()
             return false
         end
@@ -505,7 +512,7 @@ function M.nightLoop()
         local monsters
         local findOk, findResult = pcall(BGH.findMonsters)
         if not findOk then
-            warn(string.format("[BigGameHunter] findBGHMonsters() error: %s", tostring(findResult)))
+            Log.err(string.format("[BigGameHunter] monster search failed: %s", tostring(findResult)), "retrying in 1s")
             task.wait(1)
             return true  -- continue
         end
@@ -514,7 +521,7 @@ function M.nightLoop()
         if #monsters == 0 then
             -- ไม่เจอมอนที่ตีได้ → บินวน 1 รอบ radius 500 จนกว่าจะเจอ
             -- ใช้ finalGateBasePos เป็น center (กลาง Stronghold) เพราะอยู่ใน Stronghold
-            print("[BigGameHunter] No hittable monsters - flying to find more")
+            Log.dev("[BigGameHunter] No hittable monsters - flying to find more")
             updateStatus("Scanning for monsters...")
             local foundDuringScan = false
             local hrp = LP.Character
@@ -566,13 +573,13 @@ function M.nightLoop()
                     local recheck = BGH.getActivePeltTypes()
                     if #recheck == 0 then
                         -- ยืนยัน: PeltList ครบจริง → exit
-                        print("[BigGameHunter] No monsters found " .. NO_MONSTER_LIMIT
+                        Log.dev("[BigGameHunter] No monsters found " .. NO_MONSTER_LIMIT
                             .. " times in a row + PeltList confirmed complete - exiting")
                         bghExitAndCleanup("peltlist")
                         return false
                     else
                         -- PeltList ยังมี type active → server replicate แล้ว → monster spawn ใหม่ → วน loop ใหม่
-                        print("[BigGameHunter] PeltList still has " .. #recheck .. " active types - resetting counter")
+                        Log.dev("[BigGameHunter] PeltList still has " .. #recheck .. " active types - resetting counter")
                         noMonsterCount = 0
                     end
                 end
@@ -667,7 +674,7 @@ function M.nightLoop()
                         else
                             -- ไม่มี Pelt อื่นให้ตี + ไม่มี Wolf → รอ (ไม่ exit — แค่ continue)
                             -- เพราะอาจมี Cultist spawn ระหว่างนี้
-                            print("[BigGameHunter] No Wolf + no other pelts - waiting for spawn")
+                            Log.dev("[BigGameHunter] No Wolf + no other pelts - waiting for spawn")
                         end
                     end
                 end
@@ -700,15 +707,15 @@ function M.nightLoop()
             local hrp = LP.Character
                 and LP.Character:FindFirstChild("HumanoidRootPart")
             if not hrp then
-                warn("[BigGameHunter] No HumanoidRootPart - cannot warp, breaking")
+                Log.err("[BigGameHunter] no HumanoidRootPart, cannot warp to monsters", "stopping this batch")
                 break
             end
 
             local root = monster:FindFirstChild("HumanoidRootPart")
                 or monster.PrimaryPart
             if not root then
-                warn(string.format("[BigGameHunter] [%d/%d] %s has no root, skipping",
-                    monsterIdx, #monsters, monster.Name))
+                Log.err(string.format("[BigGameHunter] [%d/%d] %s has no root part", monsterIdx, #monsters, monster.Name),
+                    "skipping this monster")
                 continue
             end
 
@@ -796,8 +803,8 @@ function M.nightLoop()
                         noDamageStreak = noDamageStreak + 1
                         if noDamageStreak >= 5 then
                             -- ตี 5 ครั้ง HP ไม่ลด → เปลี่ยนตัว
-                            warn(string.format("[BigGameHunter] %s not taking damage after 5 hits - skipping",
-                                monster.Name))
+                            Log.err(string.format("[BigGameHunter] %s is not taking damage after 5 hits", monster.Name),
+                                "switching to the next monster")
                             break
                         end
                     else
