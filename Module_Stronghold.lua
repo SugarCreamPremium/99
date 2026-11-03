@@ -4,6 +4,13 @@
 -- ============================================
 
 local M = {}
+local Log = _G.WSM_Log or {
+    dev = function() end,
+    err = function(reason, nextStep)
+        warn("Error : " .. tostring(reason) .. " / " .. tostring(nextStep))
+    end,
+}
+
 
 function M.run(C)
     local LocalPlayer = C.LocalPlayer
@@ -60,7 +67,7 @@ function M.run(C)
 -- = โหมดเก็บตาย: วาร์ป + ปรับเลือดเร็วก่อน "ทุกตี" (ไม่ต้องรอ) ตีซ้ำจนตาย
 -- ============================================
 
-print("\n[Step 6] Fighting Cultists in Stronghold...")
+Log.dev("\n[Step 6] Fighting Cultists in Stronghold...")
 updateStatus("Fighting Cultists...")
 
 -- Re-equip axe ก่อนเริ่ม fight เผื่อถูก unequip ระหว่างรอ
@@ -233,7 +240,7 @@ local function doOneRound()
                 waited = 0
             elseif waited >= SPAWN_TIMEOUT then
                 -- Stronghold เปิดแล้ว แต่ Cultist ยังไม่ spawn → re-warp เพื่อกระตุ้น
-                print("[Round " .. completedRounds+1 .. "] Cultist not spawned - warping to Floor then back to TriggerZone")
+                Log.dev("[Round " .. completedRounds+1 .. "] Cultist not spawned - warping to Floor then back to TriggerZone")
                 updateStatus("Re-warp waiting for spawn...")
                 if floorPos2 then
                     local hrp = getLiveParts()
@@ -244,13 +251,13 @@ local function doOneRound()
                 waited = 0
             end
         end
-        print("✅ Cultist spawned! (round " .. completedRounds+1 .. ")")
+        Log.dev("✅ Cultist spawned! (round " .. completedRounds+1 .. ")")
     end
 
     -- Fight loop
     while true do
         if isStrongholdCleared() then
-            print("[OK] FinalGate moved -> round " .. completedRounds+1 .. " cleared")
+            Log.dev("[OK] FinalGate moved -> round " .. completedRounds+1 .. " cleared")
             updateStatus("✅ Round " .. completedRounds+1 .. "/" .. TOTAL_ROUNDS .. " Cleared!")
             break
         end
@@ -366,7 +373,7 @@ local function doOneRound()
             -- = โหมดเก็บตาย: วาร์ปตามตัวมัน + ปรับเลือดเร็วก่อน "ทุกตี" (ไม่ต้องรอ) ตีซ้ำจนตาย
             for _, cultist in ipairs(cultists) do
                 if not po and cultist and cultist.Parent and (surviveCounts[cultist] or 0) >= FINISH_MODE_AFTER then
-                    print("[Fight] Cultist survived " .. FINISH_MODE_AFTER
+                    Log.dev("[Fight] Cultist survived " .. FINISH_MODE_AFTER
                         .. " full rounds - finish mode: quick zero + hit until dead")
                     while cultist.Parent and not isStrongholdCleared() do
                         local hrp2 = getLiveParts()
@@ -437,7 +444,7 @@ local questReadyToLeave = false
 local diamondsReadyToTeleport = false  -- flag: รอให้จบรอบ แล้ว Teleport
 
 while completedRounds < TOTAL_ROUNDS do
-    print(string.format("\n[Step 6] Round %d/%d", completedRounds+1, TOTAL_ROUNDS))
+    Log.dev(string.format("\n[Step 6] Round %d/%d", completedRounds+1, TOTAL_ROUNDS))
     updateStatus(string.format("Round %d/%d - Fighting...", completedRounds+1, TOTAL_ROUNDS))
 
     -- Round is running: Module_Witch waits for it to end (and for the diamonds) before force leaving
@@ -528,7 +535,7 @@ while completedRounds < TOTAL_ROUNDS do
     end
 
     -- เปิด chest
-    print(string.format("\n[Step 7] Opening Diamond Chest (round %d)...", completedRounds))
+    Log.dev(string.format("\n[Step 7] Opening Diamond Chest (round %d)...", completedRounds))
     updateStatus("Opening Diamond Chest...")
 
     local chest = retryUntil("find Diamond Chest", function()
@@ -553,7 +560,7 @@ while completedRounds < TOTAL_ROUNDS do
     end
     if not chestPos then
         -- สรุปตำแหน่งไม่ได้จริง = ใช้จุดกองไฟแทน (รอบนี้หาเพชรไม่เจอ แต่ flow เดินต่อได้ ไม่ error ตาย)
-        warn("[Step 7] Cannot resolve Diamond Chest position - falling back to fire position")
+        Log.err("[Step 7] Diamond Chest position could not be resolved", "falling back to the fire position")
         chestPos = firePos
     end
     if platform and platform.Parent then
@@ -601,11 +608,11 @@ while completedRounds < TOTAL_ROUNDS do
         end
         task.wait(0.25)
     end
-    print(("✅ Opened chest (%d interactions)"):format(fires))
+    Log.dev(("✅ Opened chest (%d interactions)"):format(fires))
     updateStatus("✅ Chest Opened!")
 
     -- เก็บเพชร
-    print(string.format("\n[Step 7.5] Collecting diamonds (round %d)...", completedRounds))
+    Log.dev(string.format("\n[Step 7.5] Collecting diamonds (round %d)...", completedRounds))
     updateStatus("Collecting Diamonds...")
     local COLLECT_RADIUS = 150
     local COLLECT_EMPTY_STOP = 4
@@ -654,7 +661,7 @@ while completedRounds < TOTAL_ROUNDS do
         local diamonds = findDiamonds(origin)
         if #diamonds == 0 then
             emptyStreak += 1
-            print(("  round %d: no items (%d/%d)"):format(collectRound, emptyStreak, COLLECT_EMPTY_STOP))
+            Log.dev(("  round %d: no items (%d/%d)"):format(collectRound, emptyStreak, COLLECT_EMPTY_STOP))
         else
             emptyStreak = 0
             for _, d in ipairs(diamonds) do
@@ -683,7 +690,7 @@ while completedRounds < TOTAL_ROUNDS do
                         collected += 1
                         task.wait(0.15)
                     elseif d.model and d.model.Parent then
-                        warn("Diamond not collected after 25 tries - skipping")
+                        Log.err("[Step 7.5] a diamond was not collected after 25 tries", "skipping it")
                     end
                 end
             end
@@ -691,7 +698,7 @@ while completedRounds < TOTAL_ROUNDS do
         updateStatus(("Collecting Diamonds... (%d)"):format(collected))
         task.wait(0.2)
     end
-    print(("[OK] Collected %d diamonds (round %d)"):format(collected, completedRounds))
+    Log.dev(("[OK] Collected %d diamonds (round %d)"):format(collected, completedRounds))
     updateStatus(("✅ Collected %d Diamonds"):format(collected))
     _G.WSM_StrongholdRound = false -- round and diamond pickup finished
 
@@ -728,6 +735,7 @@ while completedRounds < TOTAL_ROUNDS do
     -- ถ้า quest พร้อมอัปแล้ว → ออกจาก Stronghold กลับ lobby (หลังเก็บเพchรเสร็จ)
     if questReadyToLeave then
         updateStatus("Teleporting to lobby...")
+        print("[Teleport] Quest complete - teleport to Lobby")
         task.wait(2)
         local LOBBY_PLACE_ID = 79546208627805
         pcall(function()
@@ -751,11 +759,11 @@ while completedRounds < TOTAL_ROUNDS do
         -- ALIEN SCIENTIST: เช่นเดียวกัน - ฟาร์ม Dissolves จนกว่า Cultist จะ spawn
         -- NightLoop จะหยุดเองเมื่อ checkAnyCultistSpawned() = true
         if isVampire and not Vampire.isAllQuestDone() then
-            print("[Vampire] Resuming NightLoop until Stronghold opens")
+            Log.dev("[Vampire] Resuming NightLoop until Stronghold opens")
             warpToStrongholdFloor(1)
             Vampire.resume()
         elseif isAlienScientist and not isAlienScientistAllQuestDone() then
-            print("[AlienScientist] Resuming NightLoop until Stronghold opens")
+            Log.dev("[AlienScientist] Resuming NightLoop until Stronghold opens")
             warpToStrongholdFloor(1)
             Alien.resume()
         elseif BGH.isBigGameHunter and not BGH.isBigGameHunterAllQuestDone() then
@@ -763,11 +771,11 @@ while completedRounds < TOTAL_ROUNDS do
             -- (BGH ทำไม่ได้แล้ว — limit per type = 3, total < Quest goal 50)
             local activeAfterRound = BGH.getActivePeltTypes()
             if #activeAfterRound == 0 then
-                print("[BigGameHunter] PeltList all Complete but Quest not done - leaving for Lobby")
+                Log.dev("[BigGameHunter] PeltList all Complete but Quest not done - leaving for Lobby")
                 forceTeleportLobby()
                 return
             end
-            print("[BigGameHunter] Resuming NightLoop until Stronghold opens")
+            Log.dev("[BigGameHunter] Resuming NightLoop until Stronghold opens")
             warpToStrongholdFloor(1)
             BGH.resume()
         elseif Woodsman.isWoodsman and not Woodsman.isAllQuestDone() then
@@ -778,7 +786,7 @@ while completedRounds < TOTAL_ROUNDS do
             Woodsman.resume()
         else
             -- ไม่ใช่ Vampire/AlienScientist/BigGameHunter หรือ Quest ครบแล้ว → ใช้ logic เดิม
-            print(string.format("[Round %d done] Waiting 20min for Stronghold to reopen...", completedRounds))
+            Log.dev(string.format("[Round %d done] Waiting 20min for Stronghold to reopen...", completedRounds))
             warpToStrongholdFloor(1)
             local WAIT_SECONDS = 20 * 60
             for i = WAIT_SECONDS, 1, -1 do
@@ -790,7 +798,7 @@ while completedRounds < TOTAL_ROUNDS do
             while true do
                 local remaining = getStrongholdTimeRemaining()
                 if not remaining or remaining <= 0 then
-                    print("✅ Stronghold reopened!")
+                    Log.dev("✅ Stronghold reopened!")
                     break
                 end
                 local mins = math.floor(remaining / 60)
@@ -809,7 +817,7 @@ destroyShield()
 destroyFlyBody() -- ถอน BodyVelocity คืนการควบคุมตัวละครปกติ (ไม่มี PlatformStand ให้ปลดแล้ว)
 
 print("\n=== Sugar Hub Complete ===")
-print("✅ Stronghold sequence finished! (3 rounds)")
+Log.dev("✅ Stronghold sequence finished! (3 rounds)")
 sendHorstDescription(true)  -- สรุปรอบสุดท้าย = บังคับส่ง ไม่ต้องรอ throttle
 checkDiamondsGoalAndSendDone()
 
@@ -829,7 +837,7 @@ while getCurrentDay() < MIN_DAY do
     task.wait(5)
 end
 
-print(string.format("✅ Day %d reached - resetting!", getCurrentDay()))
+Log.dev(string.format("✅ Day %d reached - resetting!", getCurrentDay()))
 updateStatus("✅ Done! Resetting...")
 task.wait(0.3)
 -- ฆ่าตัวเองจบรอบ แล้วปล่อยให้ Death Watcher ใน MainScript ทำต่อ
