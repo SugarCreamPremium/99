@@ -20,6 +20,13 @@
 -- ============================================
 
 local M = {}
+local Log = _G.WSM_Log or {
+    dev = function() end,
+    err = function(reason, nextStep)
+        warn("Error : " .. tostring(reason) .. " / " .. tostring(nextStep))
+    end,
+}
+
 
 -- ============================================
 -- Setup
@@ -204,12 +211,12 @@ end
 function M.equipAxe()
     local axe = M.getAxe()
     if not axe then
-        warn("[Woodsman] Woodsman's Axe not in Inventory")
+        Log.err("[Woodsman] Woodsman's Axe not in Inventory", "cannot equip it")
         return nil
     end
     local clientInv = (_G.Client and _G.Client.InventoryHandler) or (Client and Client.InventoryHandler)
     if not clientInv then
-        warn("[Woodsman] InventoryHandler unavailable")
+        Log.err("[Woodsman] InventoryHandler unavailable", "cannot equip the axe")
         return nil
     end
     pcall(function() clientInv.RequestEquipItem(axe) end)
@@ -255,20 +262,20 @@ function M.axeKillsLoop()
 
     local axe = M.equipAxe()
     if not axe then
-        warn("[Woodsman] Woodsman's Axe not found in Inventory - cannot fight, will skip hits")
+        Log.err("[Woodsman] Woodsman's Axe not found in Inventory", "returning to the Stronghold")
         warpBackToStronghold()
         return "impossible"
     end
 
     while M.isWoodsman and isCharacterAlive() and not M.isAxeKillsDone() do
         if checkAnyCultistSpawned() then
-            print("[Woodsman] Stronghold opened, pausing NightLoop")
+            Log.dev("[Woodsman] Stronghold opened, pausing NightLoop")
             return "stronghold"
         end
 
         local findOk, monsters = pcall(_G.findNightMonsters)
         if not findOk then
-            warn("[Woodsman] findNightMonsters error: " .. tostring(monsters))
+            Log.err("[Woodsman] monster search failed: " .. tostring(monsters), "retrying in 1s")
             task.wait(1)
             continue
         end
@@ -276,7 +283,7 @@ function M.axeKillsLoop()
         if #monsters == 0 then
             local got = M.waitForMonsters(30)
             if not got then
-                warn("[Woodsman] No hittable monsters found - waiting 1s")
+                Log.dev("[Woodsman] No hittable monsters found - waiting 1s")
                 task.wait(1)
             end
             continue
@@ -295,7 +302,7 @@ function M.axeKillsLoop()
 
             local axeRef = M.ensureEquipped()
             if not axeRef then
-                warn("[Woodsman] No Woodsman's Axe - skipping hit")
+                Log.err("[Woodsman] Woodsman's Axe is missing", "returning to the Stronghold")
                 warpBackToStronghold()
                 return "impossible"
             end
@@ -327,7 +334,7 @@ function M.axeKillsLoop()
                     ev:InvokeServer(monster, axeRef, (_G.ownerId or ownerId), currentHrp.CFrame, false)
                 end)
                 if not ok then
-                    warn("[Woodsman] InvokeServer error: " .. tostring(err))
+                    Log.err("[Woodsman] hit request failed: " .. tostring(err), "stopping hits on this monster")
                     break
                 end
 
@@ -340,7 +347,7 @@ function M.axeKillsLoop()
     local done = M.isAxeKillsDone()
     pcall(_G.WSM_QuestDone, "Woodsman") -- unified "[Quest] Done" line (only when every Woodsman stat is done)
     warpBackToStronghold()
-    print("[Woodsman] Loop ended")
+    Log.dev("[Woodsman] Loop ended")
     return done and "done" or "impossible"
 end
 
@@ -348,11 +355,11 @@ function M.cutTreeLoop()
     if not M.isWoodsman then return "skip" end
     if M.isCutTreeDone() then return "done" end
 
-    print("[Woodsman] Loop started")
+    Log.dev("[Woodsman] Loop started")
 
     local axe = M.equipAxe()
     if not axe then
-        warn("[Woodsman] Woodsman's Axe not found in Inventory - cannot fight, will skip hits")
+        Log.err("[Woodsman] Woodsman's Axe not found in Inventory", "returning to the Stronghold")
         warpBackToStronghold()
         return "impossible"
     end
@@ -362,7 +369,7 @@ function M.cutTreeLoop()
 
     while M.isWoodsman and isCharacterAlive() and not M.isCutTreeDone() do
         if checkAnyCultistSpawned() then
-            print("[Woodsman] Stronghold opened, pausing NightLoop")
+            Log.dev("[Woodsman] Stronghold opened, pausing NightLoop")
             return "stronghold"
         end
 
@@ -370,7 +377,7 @@ function M.cutTreeLoop()
         if #trees == 0 then
             noTreeRounds += 1
             if noTreeRounds >= NO_TREE_LIMIT then
-                warn("[Woodsman] No trees found - CutTree impossible (wait for next round)")
+                Log.err("[Woodsman] no trees found, CutTree is impossible right now", "waiting for the next round")
                 return "impossible"
             end
             -- Class implementation.
@@ -399,14 +406,14 @@ function M.cutTreeLoop()
             local hrp = LP.Character
                 and LP.Character:FindFirstChild("HumanoidRootPart")
             if not hrp then
-                warn("[Woodsman] No HumanoidRootPart - cannot warp, breaking")
+                Log.err("[Woodsman] no HumanoidRootPart, cannot warp", "returning to the Stronghold")
                 warpBackToStronghold()
                 return "impossible"
             end
 
             local axeRef = M.ensureEquipped()
             if not axeRef then
-                warn("[Woodsman] Woodsman's Axe missing - cannot continue")
+                Log.err("[Woodsman] Woodsman's Axe is missing", "returning to the Stronghold")
                 warpBackToStronghold()
                 return "impossible"
             end
@@ -453,7 +460,7 @@ function M.cutTreeLoop()
                 local ev = (_G.Event and _G.Event or Event)
                 local ok, err = pcall(function() ev:InvokeServer(tree, axeRef, (_G.ownerId or ownerId), hrp.CFrame, false) end)
                 if not ok then
-                    warn("[Woodsman] Tree hit error: " .. tostring(err))
+                    Log.err("[Woodsman] tree hit failed: " .. tostring(err), "stopping hits on this tree")
                     break
                 end
                 hitCount += 1
@@ -465,7 +472,7 @@ function M.cutTreeLoop()
     local done = M.isCutTreeDone()
     pcall(_G.WSM_QuestDone, "Woodsman") -- unified "[Quest] Done" line (only when every Woodsman stat is done)
     warpBackToStronghold()
-    print("[Woodsman] Loop ended")
+    Log.dev("[Woodsman] Loop ended")
     return done and "done" or "impossible"
 end
 
