@@ -4,6 +4,13 @@
 -- ============================================
 
 local M = {}
+local Log = _G.WSM_Log or {
+    dev = function() end,
+    err = function(reason, nextStep)
+        warn("Error : " .. tostring(reason) .. " / " .. tostring(nextStep))
+    end,
+}
+
 local LP = _G.LocalPlayer or game:GetService("Players").LocalPlayer
 local CQ = _G.CLASS_QUESTS or {}
 local CSC = _G.classStatCache or {}
@@ -94,9 +101,9 @@ function M.nightLoop()
     local Client = getClient()
     local dissolveRemote = getDissolveRemote()
     local dissolveRay = getDissolveRay()
-    print("[AlienScientist] Night loop started")
+    Log.dev("[AlienScientist] Night loop started")
     if not Client or not Client.InventoryHandler or not dissolveRemote then
-        warn("[AlienScientist] Shared dissolve dependencies are unavailable")
+        Log.err("[AlienScientist] shared dissolve dependencies are unavailable", "returning to the Stronghold, night loop not started")
         warpBackToStronghold()
         return
     end
@@ -175,10 +182,10 @@ function M.nightLoop()
 
     -- Pre-flight checks (warn only, don't abort - inventory may fill later)
     if not dissolveRay then
-        warn("[AlienScientist] Dissolve Ray not found in Inventory")
+        Log.err("[AlienScientist] Dissolve Ray not found in Inventory", "continuing, it may appear later")
     end
     if not dissolveRemote then
-        warn("[AlienScientist] RequestDissolveEnemy remote not resolved")
+        Log.err("[AlienScientist] RequestDissolveEnemy remote not resolved", "continuing, hits will be skipped")
     end
 
     -- Helper: วาร์ปกลับ Stronghold (ใช้ตอนจบ loop / กลางวันมา)
@@ -200,18 +207,18 @@ function M.nightLoop()
             return workspace:GetAttribute("State")
         end)
         if not stateOk then
-            warn(string.format("[AlienScientist] State read error: %s", tostring(currentState)))
+            Log.err(string.format("[AlienScientist] could not read the game State: %s", tostring(currentState)), "retrying in 1s")
             task.wait(1)
         elseif currentState ~= "Night" then
             -- DAYTIME: วาร์ปกลับ + รอ Night ถัดไป (loop tick ใหม่)
             if wasNight then
-                print("[AlienScientist] Daytime arrived, warping back + waiting for next night")
+                Log.dev("[AlienScientist] Daytime arrived, warping back + waiting for next night")
                 disableFloating()
                 warpBackToStronghold()
                 wasNight = false
             end
             if lastLoggedState ~= currentState then
-                print(string.format("[AlienScientist] Waiting for night (State: %s)", tostring(currentState)))
+                Log.dev(string.format("[AlienScientist] Waiting for night (State: %s)", tostring(currentState)))
                 lastLoggedState = currentState
             end
             task.wait(5)
@@ -219,14 +226,14 @@ function M.nightLoop()
             -- ===== NIGHT: pre-checks + main work =====
             wasNight = true
             if lastLoggedState ~= "Night" then
-                print("[AlienScientist] State=Night")
+                Log.dev("[AlienScientist] State=Night")
                 lastLoggedState = "Night"
             end
 
             -- Pre-check 1: Quest done? → return (exit)
             local questOk, questResult = pcall(M.isAllQuestDone)
             if not questOk then
-                warn(string.format("[AlienScientist] M.isAllQuestDone() error: %s", tostring(questResult)))
+                Log.err(string.format("[AlienScientist] quest check failed: %s", tostring(questResult)), "continuing the night loop")
             elseif questResult then
                 pcall(_G.WSM_QuestDone, "Alien Scientist") -- unified "[Quest] Done" line, printed once
                 disableFloating()
@@ -237,9 +244,9 @@ function M.nightLoop()
             -- Pre-check 2: Cultist spawned? → return (main flow handle)
             local cultistOk, cultistResult = pcall(checkAnyCultistSpawned)
             if not cultistOk then
-                warn(string.format("[AlienScientist] checkAnyCultistSpawned() error: %s", tostring(cultistResult)))
+                Log.err(string.format("[AlienScientist] Stronghold check failed: %s", tostring(cultistResult)), "continuing the night loop")
             elseif cultistResult then
-                print("[AlienScientist] Stronghold opened, pausing NightLoop")
+                Log.dev("[AlienScientist] Stronghold opened, pausing NightLoop")
                 disableFloating()
                 return
             end
@@ -257,13 +264,13 @@ function M.nightLoop()
         local monsters
         local findOk, findResult = pcall(findNightMonsters)
         if not findOk then
-            warn(string.format("[AlienScientist] findNightMonsters() error: %s", tostring(findResult)))
+            Log.err(string.format("[AlienScientist] monster search failed: %s", tostring(findResult)), "retrying in 1s")
             task.wait(1)
             continue
         end
         monsters = findResult
         if #monsters == 0 then
-            warn("[AlienScientist] No hittable monsters found - waiting 1s")
+            Log.dev("[AlienScientist] No hittable monsters found - waiting 1s")
             task.wait(1)
             continue
         end
@@ -291,10 +298,10 @@ function M.nightLoop()
                 task.wait(0.1)
             end
             if not equipped then
-                warn("[AlienScientist] Tool equip timeout (3s) - continuing anyway")
+                Log.err("[AlienScientist] Dissolve Ray equip timed out (3s)", "continuing anyway")
             end
         elseif not dissolveRay then
-            warn("[AlienScientist] dissolveRay is nil - cannot equip")
+            Log.err("[AlienScientist] Dissolve Ray is missing, cannot equip it", "continuing without it")
         end
 
         for monsterIdx, monster in ipairs(monsters) do
@@ -320,7 +327,7 @@ function M.nightLoop()
             local hrp = LP.Character
                 and LP.Character:FindFirstChild("HumanoidRootPart")
             if not hrp then
-                warn("[AlienScientist] No HumanoidRootPart - cannot warp, breaking")
+                Log.err("[AlienScientist] no HumanoidRootPart, cannot warp to monsters", "stopping this batch")
                 break
             end
 
@@ -386,10 +393,10 @@ function M.nightLoop()
                             break
                         end
                     else
-                        warn(string.format("[AlienScientist] InvokeServer error: %s", tostring(fireResult)))
+                        Log.err(string.format("[AlienScientist] dissolve request failed: %s", tostring(fireResult)), "continuing with the next hit")
                     end
                 else
-                    warn("[AlienScientist] No dissolveRemote - skipping hit")
+                    Log.err("[AlienScientist] dissolve remote is missing", "skipping this monster")
                     break
                 end
 
