@@ -4,6 +4,13 @@
 -- ============================================
 
 local M = {}
+local Log = _G.WSM_Log or {
+    dev = function() end,
+    err = function(reason, nextStep)
+        warn("Error : " .. tostring(reason) .. " / " .. tostring(nextStep))
+    end,
+}
+
 local LP = _G.LocalPlayer or game:GetService("Players").LocalPlayer
 local CQ = _G.CLASS_QUESTS or {}
 local CSC = _G.classStatCache or {}
@@ -134,10 +141,10 @@ function M.nightLoop()
     local airHeight = _G.airHeight or HOVER_HEIGHT
     local combatCenter = getFinalGatePosition() or Vector3.new(0, 0, 0)
     local vampireScythe = getVampireScythe()
-    print("[Vampire] Night loop started")
+    Log.dev("[Vampire] Night loop started")
 
     if not Client or not Client.InventoryHandler or not Event or not ownerId then
-        warn("[Vampire] Shared combat dependencies are unavailable")
+        Log.err("[Vampire] shared combat dependencies are unavailable", "night loop not started")
         return
     end
     local lastLoggedState = nil  -- เก็บ state ที่ print ล่าสุด (กัน spam)
@@ -145,10 +152,10 @@ function M.nightLoop()
 
     -- ตรวจ dependencies ตอนเริ่ม
     if not vampireScythe then
-        warn("[Vampire] Vampire Scythe not found in Inventory - cannot fight, will skip hits")
+        Log.err("[Vampire] Vampire Scythe not found in Inventory", "continuing, hits will be skipped")
     end
     if not LP:FindFirstChild("Inventory") then
-        warn("[Vampire] LP.Inventory not found - cannot proceed")
+        Log.err("[Vampire] LocalPlayer.Inventory not found", "continuing anyway, the loop may not work")
     end
 
     -- ใช้ AlignPosition + AlignOrientation ลอยค้าง (ไม่ Anchored HRP)
@@ -233,10 +240,10 @@ function M.nightLoop()
             currentState = workspace:GetAttribute("State")
         end)
         if not stateOk then
-            warn(string.format("[Vampire] Failed to read workspace:GetAttribute('State'): %s", tostring(stateErr)))
+            Log.err(string.format("[Vampire] could not read workspace State: %s", tostring(stateErr)), "retrying in 1s")
             task.wait(1)
         elseif currentState == nil then
-            warn("[Vampire] workspace:GetAttribute('State') returned nil - game may not be initialized, waiting...")
+            Log.err("[Vampire] workspace State is nil (game may not be initialized)", "waiting 1s and retrying")
             task.wait(1)
         elseif currentState ~= "Night" then
             -- DAYTIME: วาร์ปกลับ + รอ Night ถัดไป (loop tick ใหม่)
@@ -257,7 +264,7 @@ function M.nightLoop()
             end
             -- print เฉพาะตอน state เปลี่ยน
             if lastLoggedState ~= currentState then
-                print(string.format("[Vampire] Waiting for night (State: %s)", tostring(currentState)))
+                Log.dev(string.format("[Vampire] Waiting for night (State: %s)", tostring(currentState)))
                 lastLoggedState = currentState
             end
             task.wait(5)
@@ -265,19 +272,19 @@ function M.nightLoop()
             -- ===== NIGHT: pre-checks + main work =====
             wasNight = true
             if lastLoggedState ~= "Night" then
-                print("[Vampire] State changed to Night")
+                Log.dev("[Vampire] State changed to Night")
                 lastLoggedState = "Night"
             end
 
             -- Pre-check 1: Quest ทั้ง 2 stat ครบ? → return (exit)
             local ok1, result1 = pcall(M.isAllQuestDone)
             if not ok1 then
-                warn(string.format("[Vampire] M.isAllQuestDone() error: %s", tostring(result1)))
+                Log.err(string.format("[Vampire] quest check failed: %s", tostring(result1)), "continuing the night loop")
             elseif result1 then
                 pcall(_G.WSM_QuestDone, "Vampire") -- unified "[Quest] Done" line, printed once
                 local restoreOk, restoreErr = pcall(M.restoreHP)
                 if not restoreOk then
-                    warn(string.format("[Vampire] M.restoreHP() error: %s", tostring(restoreErr)))
+                    Log.err(string.format("[Vampire] restoring HP failed: %s", tostring(restoreErr)), "continuing")
                 end
                 disableFloating()
                 local hrpEnd = LP.Character
@@ -296,14 +303,14 @@ function M.nightLoop()
             -- Pre-check 2: Stronghold เปิด? → return (main flow handle)
             local cultistOk, cultistResult = pcall(checkAnyCultistSpawned)
             if not cultistOk then
-                warn(string.format("[Vampire] checkAnyCultistSpawned() error: %s", tostring(cultistResult)))
+                Log.err(string.format("[Vampire] Stronghold check failed: %s", tostring(cultistResult)), "continuing the night loop")
             elseif cultistResult then
-                print("[Vampire] Stronghold opened (Cultist found), pausing NightLoop for Stronghold")
+                Log.dev("[Vampire] Stronghold opened (Cultist found), pausing NightLoop for Stronghold")
                 disableFloating()
                 return
             end
 
-            print("[Vampire] State=Night, scanning for monsters")
+            Log.dev("[Vampire] State=Night, scanning for monsters")
         end
         -- ===== end state check =====
 
@@ -318,13 +325,13 @@ function M.nightLoop()
         local monsters
         local findOk, findErr = pcall(findNightMonsters)
         if not findOk then
-            warn(string.format("[Vampire] findNightMonsters() error: %s", tostring(findErr)))
+            Log.err(string.format("[Vampire] monster search failed: %s", tostring(findErr)), "retrying in 1s")
             task.wait(1)
             continue
         end
         monsters = findErr  -- pcall returns result as second value when ok
         if #monsters == 0 then
-            warn("[Vampire] No hittable monsters found in workspace.Characters - waiting 1s")
+            Log.dev("[Vampire] No hittable monsters found in workspace.Characters - waiting 1s")
             task.wait(1)
             continue
         end
@@ -341,7 +348,7 @@ function M.nightLoop()
             local hrp = character and character:FindFirstChild("HumanoidRootPart")
             local humanoid = getHumanoid(character)
             if not hrp or not humanoid or humanoid.Health <= 0 then
-                warn("[Vampire] Character is unavailable or dead - stopping combat")
+                Log.err("[Vampire] character is unavailable or dead", "stopping combat")
                 disableFloating()
                 return
             end
@@ -359,8 +366,8 @@ function M.nightLoop()
             local root = monster:FindFirstChild("HumanoidRootPart")
                 or monster.PrimaryPart
             if not root then
-                warn(string.format("[Vampire] [%d/%d] %s has no HumanoidRootPart/PrimaryPart, skipping",
-                    monsterIdx, #monsters, monster.Name))
+                Log.err(string.format("[Vampire] [%d/%d] %s has no HumanoidRootPart/PrimaryPart", monsterIdx, #monsters, monster.Name),
+                    "skipping this monster")
                 continue
             end
 
@@ -384,7 +391,7 @@ function M.nightLoop()
                 -- ลด HP ตัวเองเหลือ 1 (ทุกตี — ต้องทำ Lifesteal)
                 local hpOk, hpErr = pcall(M.keepHPOne)
                 if not hpOk then
-                    warn(string.format("[Vampire] M.keepHPOne() error: %s", tostring(hpErr)))
+                    Log.err(string.format("[Vampire] keeping HP at 1 failed: %s", tostring(hpErr)), "continuing")
                 end
 
                 -- ตีด้วย Vampire Scythe (ไม่ลดเลือดมอน)
@@ -394,11 +401,11 @@ function M.nightLoop()
                         Event:InvokeServer(monster, vampireScythe, ownerId, hrp.CFrame, false)
                     end)
                     if not hitOk then
-                        warn(string.format("[Vampire] Event:InvokeServer() error on %s: %s",
-                            monster.Name, tostring(hitErr)))
+                        Log.err(string.format("[Vampire] hit request on %s failed: %s", monster.Name, tostring(hitErr)),
+                            "continuing with the next hit")
                     end
                 else
-                    warn("[Vampire] No Vampire Scythe - skipping hit")
+                    Log.err("[Vampire] Vampire Scythe is missing", "skipping the rest of this monster")
                     break
                 end
                 hitCount = hitCount + 1
@@ -410,12 +417,12 @@ function M.nightLoop()
                 -- เช็ค Quest ทั้ง 2 stat (LifestealHealing + DealDamage) ทันที
                 local questOk, questResult = pcall(M.isAllQuestDone)
                 if not questOk then
-                    warn(string.format("[Vampire] M.isAllQuestDone() error: %s", tostring(questResult)))
+                    Log.err(string.format("[Vampire] quest check failed: %s", tostring(questResult)), "continuing the night loop")
                 elseif questResult then
                     pcall(_G.WSM_QuestDone, "Vampire") -- unified "[Quest] Done" line, printed once
                     local restoreOk2, restoreErr2 = pcall(M.restoreHP)
                     if not restoreOk2 then
-                        warn(string.format("[Vampire] M.restoreHP() error: %s", tostring(restoreErr2)))
+                        Log.err(string.format("[Vampire] restoring HP failed: %s", tostring(restoreErr2)), "continuing")
                     end
                     disableFloating()
                     local endHrp = LP.Character
@@ -444,8 +451,8 @@ function M.nightLoop()
                 end
 
                 if hitCount >= MAX_HITS_PER_TARGET then
-                    warn(string.format("[Vampire] [%d/%d] %s survived %d hits, skipping to next",
-                        monsterIdx, #monsters, monster.Name, MAX_HITS_PER_TARGET))
+                    Log.err(string.format("[Vampire] [%d/%d] %s survived %d hits", monsterIdx, #monsters, monster.Name, MAX_HITS_PER_TARGET),
+                        "skipping to the next monster")
                     break  -- ครบ 100 → เปลี่ยนตัว
                 end
 
@@ -461,7 +468,7 @@ function M.nightLoop()
     if isCharacterAlive() and not M.isAllQuestDone() then
         warpBackToStronghold()
     end
-    print("[Vampire] Night loop ended, at Stronghold")
+    Log.dev("[Vampire] Night loop ended, at Stronghold")
 end
 
 function M.runBackground()
