@@ -31,6 +31,13 @@
 -- ============================================
 
 local M = {}
+local Log = _G.WSM_Log or {
+    dev = function() end,
+    err = function(reason, nextStep)
+        warn("Error : " .. tostring(reason) .. " / " .. tostring(nextStep))
+    end,
+}
+
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -256,7 +263,7 @@ local function prepare(potion, force)
     end
     if not reloadFailLogged then
         reloadFailLogged = true
-        warn("[Witch] Reload request refused: " .. describe(res))
+        Log.err("[Witch] Witch Potion reload request was refused: " .. describe(res), "continuing (this error is logged only once)")
     end
     return false
 end
@@ -291,7 +298,7 @@ local function throwAt(potion, target)
     local ok1, r1 = invoke(Register, potion, id)
     if not ok1 then
         -- error or timeout: the server did not register the projectile, so do not explode it
-        warn("[Witch] RegisterProjectile failed: " .. tostring(r1))
+        Log.err("[Witch] RegisterProjectile failed: " .. tostring(r1), "not exploding this throw, retrying in 2s")
         task.wait(2)
         return false
     end
@@ -520,11 +527,11 @@ local running = false
 function M.mainLoop()
     if not M.isWitch then return end
     if not wantsUpgrade() then
-        print("[Witch] Witch is not in UpgradeClass - module idle")
+        Log.dev("[Witch] Witch is not in UpgradeClass - module idle")
         return
     end
     if not resolveRemotes() then
-        warn("[Witch] Remotes unavailable")
+        Log.err("[Witch] remotes unavailable", "the Witch loop is not started")
         return
     end
 
@@ -534,12 +541,12 @@ function M.mainLoop()
         waited += 1
     end
     if not getPotion() then
-        warn("[Witch] Witch Potion not found in Inventory")
+        Log.err("[Witch] Witch Potion not found in Inventory", "the Witch loop is not started")
         return
     end
 
     M.active = true
-    print("[Witch] Loop started")
+    Log.dev("[Witch] Loop started")
     local mode = "outside"
 
     while true do
@@ -550,7 +557,7 @@ function M.mainLoop()
 
         local goal = hitGoal()
         if not goal then
-            print("[Witch] No HitPotion quest left at this level - loop ended")
+            Log.dev("[Witch] No HitPotion quest left at this level - loop ended")
             break
         end
 
@@ -578,7 +585,7 @@ function M.mainLoop()
             end
             if cfg("WitchStrongholdThrow", true) then
                 local ok, err = pcall(fightCycle)
-                if not ok then warn("[Witch] fight cycle error: " .. tostring(err)) end
+                if not ok then Log.err("[Witch] fight cycle failed: " .. tostring(err), "retrying on the next tick") end
             end
         elseif busy then
             -- Stronghold open but no cultist yet / between waves: the Stronghold flow moves the player
@@ -589,7 +596,7 @@ function M.mainLoop()
             if cfg("WitchOutsideFarm", true) then
                 local ok, err = pcall(outsideCycle)
                 if not ok then
-                    warn("[Witch] outside cycle error: " .. tostring(err))
+                    Log.err("[Witch] outside cycle failed: " .. tostring(err), "retrying in 1s")
                     task.wait(1)
                 end
             end
