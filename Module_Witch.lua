@@ -17,9 +17,9 @@
 --
 -- Behaviour
 --   Outside a Stronghold : hover above the nearest monster (any monster, its HP is NOT zeroed) and throw.
---   Stronghold fight     : potion only while the quest is incomplete (M.potionOnly()). The potion stays equipped,
+--   Stronghold fight     : potion only while the quest is incomplete (M.specialWeaponOnly()). The potion stays equipped,
 --                          the cultists' HP is not zeroed and the axe does not hit (MainScript / Module_Stronghold
---                          check M.potionOnly()). Throws never stop, there is no throw limit.
+--                          check M.specialWeaponOnly()). Throws never stop, there is no throw limit.
 --   Quest complete       : force leave to the Lobby so the class can be upgraded:
 --                          - outside a Stronghold round -> leave right away
 --                          - inside a round -> play to the end, collect the diamonds, then leave right away
@@ -136,7 +136,7 @@ M.active = false
 
 -- potion-only mode: the Stronghold fight must not use the axe or zero the cultists' HP.
 -- Only true when this module really is throwing, otherwise the cultists would never die.
-function M.potionOnly()
+function M.specialWeaponOnly()
     return M.isWitch and M.active
         and cfg("WitchStrongholdThrow", true)
         and not M.isAllQuestDone()
@@ -408,7 +408,7 @@ end
 -- release the hover and hold the axe again (not in potion-only mode); warp = also go back to the Stronghold
 local function leaveOutside(warp)
     clearFloating()
-    if not M.potionOnly() then equipAxe() end
+    if not M.specialWeaponOnly() then equipAxe() end
     if warp then warpBackToStronghold() end
 end
 
