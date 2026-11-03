@@ -53,13 +53,18 @@ function M.run(C)
     local isStrongholdEnemy = C.isStrongholdEnemy
     local zeroEnemyHealth = C.zeroEnemyHealth
 
-    -- Witch with an unfinished HitPotion quest: only the Witch Potion is used in the fight
-    -- (no axe hits, no HP zeroing). Module_Witch decides; false when it is not running.
-    local function potionOnly()
-        local w = _G.WSM_Witch
-        return w ~= nil and type(w.potionOnly) == "function" and w.potionOnly() == true
+    -- A class with an unfinished quest that needs its own weapon (Witch Potion, Ghost Crossbow): only that weapon
+    -- is used in the fight (no axe hits, no HP zeroing). The class module decides; false when it is not running.
+    local function specialWeaponOnly()
+        for _, key in ipairs({ "WSM_Witch", "WSM_GhostRanger" }) do
+            local w = _G[key]
+            if w ~= nil and type(w.specialWeaponOnly) == "function" and w.specialWeaponOnly() == true then
+                return true
+            end
+        end
+        return false
     end
-    local potionWasOn = false
+    local specialWeaponWasOn = false
 
 -- ============================================
 -- STEP 6: Fight loop - วาร์ปเข้าไปหา Cultist "ทุกตัว" ทีละตัว ปรับเลือดแล้วตีตัวนั้นจากจุดใกล้
@@ -72,7 +77,7 @@ updateStatus("Fighting Cultists...")
 
 -- Re-equip axe ก่อนเริ่ม fight เผื่อถูก unequip ระหว่างรอ
 do
-    local skipAxe = potionOnly() -- potion only: keep the Witch Potion, do not equip the axe
+    local skipAxe = specialWeaponOnly() -- potion only: keep the Witch Potion, do not equip the axe
     if not skipAxe then Client.InventoryHandler.RequestEquipItem(bestAxeCombat) end
     local waited = 0
     while waited < 3 and not skipAxe do
@@ -273,11 +278,11 @@ local function doOneRound()
             local hrp = getLiveParts()
             if not hrp then task.wait(0.2) continue end
 
-            -- Witch potion-only mode (see potionOnly): no axe, no HP zero. When it ends mid-round
+            -- Witch potion-only mode (see specialWeaponOnly): no axe, no HP zero. When it ends mid-round
             -- (quest done) the axe is equipped again right away.
-            local po = potionOnly()
-            local potionJustEnded = potionWasOn and not po
-            potionWasOn = po
+            local po = specialWeaponOnly()
+            local potionJustEnded = specialWeaponWasOn and not po
+            specialWeaponWasOn = po
 
             -- re-equip axe ก่อนตีทุก tick (เฉพาะตอนไม่ใช้ cannon)
             if not useCannon and not po then
@@ -452,7 +457,7 @@ while completedRounds < TOTAL_ROUNDS do
 
     -- Re-equip ทุกรอบ: ถ้า useCannon → Laser Cannon, ไม่งั้น axe
     -- (Witch potion-only: leave the equipped potion alone)
-    local skipAxe = potionOnly()
+    local skipAxe = specialWeaponOnly()
     if skipAxe then
         -- keep the Witch Potion
     elseif useCannon and cannonTool then
