@@ -28,6 +28,7 @@
 --   Config.AssassinHoverHeight   = 10     -- studs above the target (default _G.HOVER_HEIGHT or 10)
 --   Config.AssassinHitMode       = "zero" -- "zero" or "local"
 --   Config.AssassinTravelRadius  = 500    -- radius of the TravelStuds circle
+--   Config.AssassinSkipNames     = {}     -- extra name fragments to never hunt (rabbits / bunnies / bees are always skipped)
 -- ============================================
 
 local M = {}
@@ -297,6 +298,21 @@ local function currentHitMode()
     return hitMode
 end
 
+-- Monsters the hunt never targets: rabbits / bunnies and bees (fast, hard to follow, not worth the time).
+-- Matched on the lower-cased model name; extra names can be added with Config.AssassinSkipNames.
+local function isSkippedName(name)
+    local n = string.lower(name)
+    if string.find(n, "bunny", 1, true) or string.find(n, "rabbit", 1, true) then return true end
+    if n == "bee" or n == "bees" or string.find(n, "^bee[%s_%-]") or string.find(n, "[%s_%-]bee$") then return true end
+    local extra = cfg("AssassinSkipNames", nil)
+    if type(extra) == "table" then
+        for _, word in ipairs(extra) do
+            if type(word) == "string" and word ~= "" and string.find(n, string.lower(word), 1, true) then return true end
+        end
+    end
+    return false
+end
+
 local function isDead(monster)
     return not monster.Parent
         or monster:GetAttribute("Dead") == true
@@ -394,7 +410,7 @@ local function huntCycle(tool)
     if not okFind or type(monsters) ~= "table" then return false end
     local alive = {}
     for _, m in ipairs(monsters) do
-        if m.Parent and not isDead(m) then alive[#alive + 1] = m end
+        if m.Parent and not isDead(m) and not isSkippedName(m.Name) then alive[#alive + 1] = m end
     end
     local target = nearestOf(alive, hrp.Position)
     if not target then return false end
