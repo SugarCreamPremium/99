@@ -257,7 +257,6 @@ local function shootAt(tool, target)
 
     shotsSinceProgress += 1
     noteProgress()
-    status(string.format("Ghost Ranger: %s %d/%d", STAT_KEY, hitCount(), hitGoal() or 0))
     return true
 end
 
