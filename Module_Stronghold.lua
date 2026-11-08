@@ -56,7 +56,7 @@ function M.run(C)
     -- A class with an unfinished quest that needs its own weapon (Witch Potion, Ghost Crossbow): only that weapon
     -- is used in the fight (no axe hits, no HP zeroing). The class module decides; false when it is not running.
     local function specialWeaponOnly()
-        for _, key in ipairs({ "WSM_Witch", "WSM_GhostRanger" }) do
+        for _, key in ipairs({ "WSM_Witch", "WSM_GhostRanger", "WSM_Pyromaniac" }) do
             local w = _G[key]
             if w ~= nil and type(w.specialWeaponOnly) == "function" and w.specialWeaponOnly() == true then
                 return true
@@ -283,6 +283,7 @@ local function doOneRound()
             local po = specialWeaponOnly()
             local potionJustEnded = specialWeaponWasOn and not po
             specialWeaponWasOn = po
+            local pyroOn = po and _G.WSM_Pyromaniac and _G.WSM_Pyromaniac.isPyromaniac
 
             -- re-equip axe ก่อนตีทุก tick (เฉพาะตอนไม่ใช้ cannon)
             if not useCannon and not po then
@@ -363,6 +364,12 @@ local function doOneRound()
                     end
                 end
 
+                -- Pyromaniac: flamethrower kill instead of the axe (HP is already zeroed above)
+                local pyro = _G.WSM_Pyromaniac
+                if po and pyro and pyro.isPyromaniac and type(pyro.strongholdHit) == "function" then
+                    pcall(pyro.strongholdHit, validCultists, hrp)
+                end
+
                 -- นับรอบที่ตัวนี้ยังไม่ตาย: ปรับเลือดติด = +1, ปรับเลือดไม่ติด = +2 (ไม่ทำงาน = นับหนัก)
                 for _, cultist in ipairs(validCultists) do
                     local attrZero = cultist:GetAttribute("Health") == 0
@@ -377,7 +384,7 @@ local function doOneRound()
             -- Phase 2: ตัวไหนทำครบ FINISH_MODE_AFTER รอบแล้วยังไม่ตาย
             -- = โหมดเก็บตาย: วาร์ปตามตัวมัน + ปรับเลือดเร็วก่อน "ทุกตี" (ไม่ต้องรอ) ตีซ้ำจนตาย
             for _, cultist in ipairs(cultists) do
-                if not po and cultist and cultist.Parent and (surviveCounts[cultist] or 0) >= FINISH_MODE_AFTER then
+                if (not po or pyroOn) and cultist and cultist.Parent and (surviveCounts[cultist] or 0) >= FINISH_MODE_AFTER then
                     Log.dev("[Fight] Cultist survived " .. FINISH_MODE_AFTER
                         .. " full rounds - finish mode: quick zero + hit until dead")
                     while cultist.Parent and not isStrongholdCleared() do
@@ -390,6 +397,15 @@ local function doOneRound()
                         hrp2.CFrame = CFrame.new(root2.Position + Vector3.new(0, HOVER_HEIGHT, 0))
                             * CFrame.Angles(math.rad(-90), 0, 0)
                         task.wait()
+
+                        -- Pyromaniac: flamethrower hit instead of the axe (falls through to the axe when it cannot be used)
+                        if pyroOn then
+                            local okPyro, usedPyro = pcall(_G.WSM_Pyromaniac.strongholdHit, { cultist }, hrp2)
+                            if okPyro and usedPyro ~= false then
+                                task.wait(ATTACK_INTERVAL)
+                                continue
+                            end
+                        end
 
                         -- re-equip axe ถ้าหลุดระหว่างตี
                         local char2 = LocalPlayer.Character
