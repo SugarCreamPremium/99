@@ -313,8 +313,6 @@ local function throwAt(potion, target)
 
     loaded = false
     prepare(potion, true) -- start the next reload right away
-
-    status(string.format("Witch: HitPotion %d/%d", hitCount(), hitGoal() or 0))
     return true
 end
 
