@@ -135,12 +135,6 @@ end
 -- true while the main loop is running
 M.active = false
 
-local function questStatus()
-    status(string.format("Assassin: %s %d/%s, %s %d/%s",
-        KILLS_KEY, have(KILLS_KEY), tostring(goal(KILLS_KEY) or "-"),
-        TRAVEL_KEY, have(TRAVEL_KEY), tostring(goal(TRAVEL_KEY) or "-")))
-end
-
 -- ============================================
 -- Tools
 -- ============================================
@@ -452,7 +446,6 @@ local function huntCycle(tool)
             if r == "error" then task.wait(0.5) end
             hits += 1
         end
-        questStatus()
         task.wait(cooldown)
     end
 
@@ -518,7 +511,6 @@ local function travelCycle()
     end
 
     travelLaps += 1
-    status(string.format("Assassin: %s %d/%s (lap %d)", TRAVEL_KEY, have(TRAVEL_KEY), tostring(goal(TRAVEL_KEY) or "-"), travelLaps))
 
     local n = have(TRAVEL_KEY)
     if n ~= travelLastCount or n ~= startCount then
