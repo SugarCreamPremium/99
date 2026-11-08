@@ -147,11 +147,6 @@ local function fuelNow()
     return type(v) == "number" and v or 0
 end
 
-local function questStatus()
-    status(string.format("Pyromaniac: %s %d/%s | Fuel %d",
-        KILLS_KEY, have(), tostring(goal() or "-"), math.floor(fuelNow())))
-end
-
 -- ============================================
 -- Tools
 -- ============================================
@@ -816,7 +811,6 @@ function M.strongholdHit(cultists, hrp)
         if allDead then break end
         task.wait(0.1)
     end
-    questStatus()
     return true
 end
 
@@ -892,7 +886,6 @@ local function huntCycle()
         return false
     end
 
-    questStatus()
     local result = killTarget(target)
     if result == "killed" then
         noteKill()
