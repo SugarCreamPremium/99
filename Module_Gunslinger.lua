@@ -1023,9 +1023,11 @@ end
 -- ============================================
 local blacklist = setmetatable({}, { __mode = "k" }) -- [monster] = time until which it is skipped
 
--- rabbits and bees are shot normally; deer (HP cannot be zeroed), Mossy Wolf and the Config names are never hunted
+-- Frog, FrogBlue, Bunny and Bee (exact names), deer (HP cannot be zeroed), Mossy Wolf and the Config names are never hunted
+local SKIP_EXACT = { frog = true, frogblue = true, bunny = true, bee = true }
 local function isSkippedName(name)
     local n = string.lower(name)
+    if SKIP_EXACT[n] then return true end
     if string.find(n, "deer", 1, true) then return true end
     if string.find(n, "mossy wolf", 1, true) then return true end
     local extra = cfg("GunslingerSkipNames", nil)
