@@ -37,7 +37,7 @@
 --   Config.GunslingerHitMode        = "zero"   -- "zero" (zero HP + one shot, auto switch) or "plain" (shoot only)
 --   Config.GunslingerBulletSpeed    = 100000   -- lower it (~3000) if the server starts refusing the bullets
 --   Config.GunslingerRefillBelow    = 12       -- collect ammo items when the reserve is at or below this
---   Config.GunslingerSkipNames      = {}       -- extra name fragments to never hunt (Deer is always skipped)
+--   Config.GunslingerSkipNames      = {}       -- extra name fragments to never hunt (Deer and Mossy Wolf are always skipped)
 --   Config.GunslingerMaxAmmoFails   = 3        -- failures before an ammo item is given up for good
 --   Config.GunslingerRetryDelay     = 120      -- seconds before a refused ammo item is tried again (times fails)
 --   Config.GunslingerResetWhenOut   = true     -- kill the character when the ammo is really gone
@@ -1023,10 +1023,11 @@ end
 -- ============================================
 local blacklist = setmetatable({}, { __mode = "k" }) -- [monster] = time until which it is skipped
 
--- rabbits and bees are shot normally; deer (HP cannot be zeroed) and the Config names are never hunted
+-- rabbits and bees are shot normally; deer (HP cannot be zeroed), Mossy Wolf and the Config names are never hunted
 local function isSkippedName(name)
     local n = string.lower(name)
     if string.find(n, "deer", 1, true) then return true end
+    if string.find(n, "mossy wolf", 1, true) then return true end
     local extra = cfg("GunslingerSkipNames", nil)
     if type(extra) == "table" then
         for _, word in ipairs(extra) do
