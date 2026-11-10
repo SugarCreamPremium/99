@@ -75,6 +75,7 @@ local EXTRA_ZERO_ROUNDS = 2          -- extra zero + shot rounds before plain sh
 local SHOT_PAD = 0.15                -- added to the weapon's FireRate between two shots
 local STALL_KILLS = 15               -- kills without quest progress before switching to plain mode
 local BLACKLIST_SECONDS = 60         -- a target that could not be killed is skipped for this long
+local MAX_SHOTS_PER_TARGET = 5       -- shots at one target; still alive after the last one -> skipped for good
 local RESET_DEBOUNCE = 60            -- minimum seconds between two self-resets
 local CHEST_OPEN_WAIT = 1.5          -- seconds to wait for the chests to change state
 local LOOT_SETTLE = 3                -- seconds to wait for chest loot to drop
@@ -865,12 +866,14 @@ end
 
 -- ============================================
 -- Kill sequence for one monster (outside a Stronghold)
--- Returns "killed", "failed" or "abort".
+-- Returns "killed", "failed", "unkillable" or "abort".
+--   "unkillable" = still alive after MAX_SHOTS_PER_TARGET shots (never hunted again)
 -- ============================================
 local function killTarget(monster)
     local gun = getGun()
     if not gun then return "abort" end
     local deadline = tick() + TARGET_DEADLINE
+    local shots = 0
 
     local function stop()
         return not isAlive() or tick() >= deadline or anyCultist() or M.isAllQuestDone()
@@ -892,8 +895,10 @@ local function killTarget(monster)
             local r = shootAt(gun, monster)
             if r == "noammo" then return "abort" end
             if r == "error" then return "failed" end
+            shots = shots + 1
             trackWait(monster, DEATH_WAIT)
             if isDead(monster) then return "killed" end
+            if shots >= MAX_SHOTS_PER_TARGET then return "unkillable" end
         end
     end
 
@@ -905,6 +910,12 @@ local function killTarget(monster)
         if r == "error" then
             if isDead(monster) then return "killed" end
             return "failed"
+        end
+        shots = shots + 1
+        if shots >= MAX_SHOTS_PER_TARGET then
+            trackWait(monster, DEATH_WAIT) -- give the last shot time to kill before judging it
+            if isDead(monster) then return "killed" end
+            return "unkillable"
         end
         trackWait(monster, 0.3)
     end
@@ -1096,6 +1107,9 @@ local function huntCycle()
     local result = killTarget(target)
     if result == "killed" then
         noteKill()
+    elseif result == "unkillable" then
+        blacklist[target] = math.huge
+        Log.dev("[Gunslinger] " .. tostring(target.Name) .. " still alive after " .. MAX_SHOTS_PER_TARGET .. " shots - skipping it for good")
     elseif result == "failed" then
         blacklist[target] = tick() + BLACKLIST_SECONDS
         Log.dev("[Gunslinger] could not kill " .. tostring(target.Name) .. " - skipping it for " .. BLACKLIST_SECONDS .. "s")
