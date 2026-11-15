@@ -40,6 +40,37 @@ local function zeroEnemyHealth(target)
     local fn = _G.zeroEnemyHealth
     if fn then return fn(target) end
 end
+-- Zero-HP kill that waits for the server chase first (MainScript _G.WSM_MeleeKill).
+-- Returns "gone" (monster removed), "char" (we died), "quest" (quest done), "stronghold" (cultists spawned),
+-- "stuck" (still alive after 3 tries) or nil when _G.WSM_MeleeKill does not exist (the caller keeps the old zero loop).
+local function meleeKillStatus(monster, weapon, snap)
+    local kill = _G.WSM_MeleeKill
+    if type(kill) ~= "function" then return nil end
+    local reason
+    local function abort()
+        if not isCharacterAlive() then reason = "char" return true end
+        if BGH.isBigGameHunterAllQuestDone() then reason = "quest" return true end
+        if checkAnyCultistSpawned() then reason = "stronghold" return true end
+        return false
+    end
+    local tries, deadSince = 0, nil
+    while monster and monster.Parent do
+        local ok, dead = pcall(kill, monster, weapon, { snap = snap, abort = abort })
+        if reason then return reason end
+        if not ok then return "stuck" end
+        if dead then
+            -- dead but the model is still there (corpse / pelt): wait for the server to remove it
+            deadSince = deadSince or os.clock()
+            if os.clock() - deadSince > 5 then return "gone" end
+            task.wait(0.2)
+        else
+            tries += 1
+            if tries >= 3 then return "stuck" end
+        end
+    end
+    return "gone"
+end
+
 local function getToolCooldown(tool)
     local fn = _G.getToolCooldown
     return fn and fn(tool) or 0.5
@@ -641,30 +672,51 @@ function M.nightLoop()
                                 if floatAP then floatAP.Position = hrp2.Position end
                                 if floatAO then floatAO.CFrame = hrp2.CFrame end
                                 task.wait(0.2)
-                                pcall(zeroEnemyHealth, otherMonster)
-                                task.wait(1)
-                                pcall(function()
-                                    Event:InvokeServer(otherMonster, axe, ownerId, hrp2.CFrame, false)
+                                local meleeStatus = meleeKillStatus(otherMonster, axe, function(m)
+                                    local r = m:FindFirstChild("HumanoidRootPart") or m.PrimaryPart
+                                    local h = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+                                    if r and h then
+                                        h.CFrame = CFrame.new(r.Position + Vector3.new(0, HOVER_HEIGHT, 0))
+                                            * CFrame.Angles(math.rad(-90), 0, 0)
+                                        if floatAP then floatAP.Position = h.Position end
+                                        if floatAO then floatAO.CFrame = h.CFrame end
+                                    end
                                 end)
-                                while otherMonster and otherMonster.Parent do
-                                    if not isCharacterAlive() then
-                                        disableFloating()
-                                        return false
-                                    end
-                                    if BGH.isBigGameHunterAllQuestDone() then
-                                        bghExitAndCleanup("quest")
-                                        return false
-                                    end
-                                    if checkAnyCultistSpawned() then
-                                        bghExitForStronghold()
-                                        return false
-                                    end
+                                if meleeStatus == "char" then
+                                    disableFloating()
+                                    return false
+                                elseif meleeStatus == "quest" then
+                                    bghExitAndCleanup("quest")
+                                    return false
+                                elseif meleeStatus == "stronghold" then
+                                    bghExitForStronghold()
+                                    return false
+                                elseif meleeStatus == nil then
                                     pcall(zeroEnemyHealth, otherMonster)
                                     task.wait(1)
                                     pcall(function()
                                         Event:InvokeServer(otherMonster, axe, ownerId, hrp2.CFrame, false)
                                     end)
-                                    task.wait(0.1)
+                                    while otherMonster and otherMonster.Parent do
+                                        if not isCharacterAlive() then
+                                            disableFloating()
+                                            return false
+                                        end
+                                        if BGH.isBigGameHunterAllQuestDone() then
+                                            bghExitAndCleanup("quest")
+                                            return false
+                                        end
+                                        if checkAnyCultistSpawned() then
+                                            bghExitForStronghold()
+                                            return false
+                                        end
+                                        pcall(zeroEnemyHealth, otherMonster)
+                                        task.wait(1)
+                                        pcall(function()
+                                            Event:InvokeServer(otherMonster, axe, ownerId, hrp2.CFrame, false)
+                                        end)
+                                        task.wait(0.1)
+                                    end
                                 end
                                 if not (otherMonster and otherMonster.Parent) then
                                     BGH.consumePeltsNear(otherRoot.Position, PELT_SEARCH_RADIUS)
@@ -754,39 +806,26 @@ function M.nightLoop()
                 return false
             end
 
-            -- Hit pattern: zero -> wait 1s -> axe (เหมือน Cultist)
-            pcall(zeroEnemyHealth, monster)
-            task.wait(1)
-            pcall(function()
-                Event:InvokeServer(monster, axe, ownerId, hrp.CFrame, false)
-            end)
-            task.wait(0.1)
-
-            -- ตีซ้ำจนกว่าจะตาย (ไม่มี cap — recheck ทุก hit)
-            -- Protection: ถ้าตี 5 ครั้งติด HP ไม่ลด → เปลี่ยนตัว (กันตีค้าง)
-            local noDamageStreak = 0
-            while monster and monster.Parent do
-                if not isCharacterAlive() then
-                    pcall(function() task.cancel(trackThread) end)
-                    disableFloating()
-                    return false
-                end
-                if BGH.isBigGameHunterAllQuestDone() then
-                    pcall(function() task.cancel(trackThread) end)
-                    bghExitAndCleanup("quest")
-                    return false
-                end
-                if checkAnyCultistSpawned() then
-                    pcall(function() task.cancel(trackThread) end)
-                    bghExitForStronghold()
-                    return false
-                end
-
-                -- เช็ค HP ก่อนตี
-                local humBefore = monster:FindFirstChildOfClass("Humanoid")
-                    or monster:FindFirstChildWhichIsA("Humanoid", true)
-                local hpBefore = humBefore and humBefore.Health or 0
-
+            -- Hit pattern: zero the HP only after the server starts the chase, then one axe hit (_G.WSM_MeleeKill)
+            -- (the track thread above keeps us over the monster)
+            local meleeStatus = meleeKillStatus(monster, axe, nil)
+            if meleeStatus == "char" then
+                pcall(function() task.cancel(trackThread) end)
+                disableFloating()
+                return false
+            elseif meleeStatus == "quest" then
+                pcall(function() task.cancel(trackThread) end)
+                bghExitAndCleanup("quest")
+                return false
+            elseif meleeStatus == "stronghold" then
+                pcall(function() task.cancel(trackThread) end)
+                bghExitForStronghold()
+                return false
+            elseif meleeStatus == "stuck" then
+                Log.err(string.format("[BigGameHunter] %s is not dying after 3 kill attempts", monster.Name),
+                    "switching to the next monster")
+            elseif meleeStatus == nil then
+                -- Hit pattern: zero -> wait 1s -> axe (เหมือน Cultist)
                 pcall(zeroEnemyHealth, monster)
                 task.wait(1)
                 pcall(function()
@@ -794,23 +833,57 @@ function M.nightLoop()
                 end)
                 task.wait(0.1)
 
-                -- เช็ค HP หลังตี
-                if monster and monster.Parent and humBefore then
-                    local humAfter = monster:FindFirstChildOfClass("Humanoid")
+                -- ตีซ้ำจนกว่าจะตาย (ไม่มี cap — recheck ทุก hit)
+                -- Protection: ถ้าตี 5 ครั้งติด HP ไม่ลด → เปลี่ยนตัว (กันตีค้าง)
+                local noDamageStreak = 0
+                while monster and monster.Parent do
+                    if not isCharacterAlive() then
+                        pcall(function() task.cancel(trackThread) end)
+                        disableFloating()
+                        return false
+                    end
+                    if BGH.isBigGameHunterAllQuestDone() then
+                        pcall(function() task.cancel(trackThread) end)
+                        bghExitAndCleanup("quest")
+                        return false
+                    end
+                    if checkAnyCultistSpawned() then
+                        pcall(function() task.cancel(trackThread) end)
+                        bghExitForStronghold()
+                        return false
+                    end
+
+                    -- เช็ค HP ก่อนตี
+                    local humBefore = monster:FindFirstChildOfClass("Humanoid")
                         or monster:FindFirstChildWhichIsA("Humanoid", true)
-                    local hpAfter = humAfter and humAfter.Health or 0
-                    if hpAfter >= hpBefore then
-                        noDamageStreak = noDamageStreak + 1
-                        if noDamageStreak >= 5 then
-                            -- ตี 5 ครั้ง HP ไม่ลด → เปลี่ยนตัว
-                            Log.err(string.format("[BigGameHunter] %s is not taking damage after 5 hits", monster.Name),
-                                "switching to the next monster")
-                            break
+                    local hpBefore = humBefore and humBefore.Health or 0
+
+                    pcall(zeroEnemyHealth, monster)
+                    task.wait(1)
+                    pcall(function()
+                        Event:InvokeServer(monster, axe, ownerId, hrp.CFrame, false)
+                    end)
+                    task.wait(0.1)
+
+                    -- เช็ค HP หลังตี
+                    if monster and monster.Parent and humBefore then
+                        local humAfter = monster:FindFirstChildOfClass("Humanoid")
+                            or monster:FindFirstChildWhichIsA("Humanoid", true)
+                        local hpAfter = humAfter and humAfter.Health or 0
+                        if hpAfter >= hpBefore then
+                            noDamageStreak = noDamageStreak + 1
+                            if noDamageStreak >= 5 then
+                                -- ตี 5 ครั้ง HP ไม่ลด → เปลี่ยนตัว
+                                Log.err(string.format("[BigGameHunter] %s is not taking damage after 5 hits", monster.Name),
+                                    "switching to the next monster")
+                                break
+                            end
+                        else
+                            noDamageStreak = 0  -- reset (มี damage แล้ว)
                         end
-                    else
-                        noDamageStreak = 0  -- reset (มี damage แล้ว)
                     end
                 end
+
             end
 
             -- ยกเลิก track thread เมื่อจบ (monster ตายหรือเปลี่ยนตัว)
