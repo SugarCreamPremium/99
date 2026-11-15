@@ -597,7 +597,49 @@ local function petDamageSession()
         -- อ่าน petAliveCount() ไม่ใช่ CurrentPets: attribute ดีเลย์, pet ตายแล้วค้างค่าเดิมได้
         local hasPets = petAliveCount() > 0
         local farmSelf = not hasPets or M.isPetDamageDone()
-        if farmSelf then
+        if farmSelf and type(_G.WSM_MeleeKill) == "function" then
+            -- zero the HP only after the server starts the chase, then one hit (_G.WSM_MeleeKill in MainScript)
+            -- once per session; if the monster survives, the per-tick hit below keeps going (no more zeroing)
+            if not zeroed then
+                zeroed = true
+                local w0 = getMeleeWeapon()
+                if w0 then
+                    if equipWeapon(Client, w0) then task.wait(0.15) end
+                    pcall(_G.WSM_MeleeKill, monster, w0, {
+                        deadline = os.clock() + 20,
+                        snap = function(m)
+                            local h = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+                            local r2 = m:FindFirstChild("HumanoidRootPart") or m.PrimaryPart
+                            if h and r2 then
+                                startHoverLock(h, CFrame.new(r2.Position + Vector3.new(0, 10, 0))
+                                    * CFrame.Angles(math.rad(-90), 0, 0))
+                            end
+                        end,
+                        abort = function()
+                            return strongholdBusy() or not isCharacterAlive()
+                        end,
+                        -- registered local damage, same as the per-tick hit below
+                        hit = function(m, wpn)
+                            local h = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+                            if not h then return nil end
+                            local dmg0 = wpn:GetAttribute("WeaponDamage") or 10
+                            local okD, id0, undo0 = pcall(function()
+                                return Client.EnemyHandler.ApplyLocalDamage(m, dmg0)
+                            end)
+                            if not okD then id0, undo0 = ownerId, nil end
+                            if id0 == nil then return "skip" end
+                            local okH, res0 = pcall(function() return Event:InvokeServer(m, wpn, id0, h.CFrame, false) end)
+                            if (not okH or (type(res0) == "table" and res0.Success == false)) and undo0 then
+                                pcall(undo0)
+                            end
+                            return okH and res0 or nil
+                        end,
+                    })
+                end
+                continue -- the top of the loop re-checks dead / stronghold
+            end
+        elseif farmSelf then
+            -- old recipe (MainScript without _G.WSM_MeleeKill)
             pcall(function() _G.zeroEnemyHealth(monster) end)
             if not zeroed then
                 zeroed = true
