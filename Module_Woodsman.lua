@@ -318,28 +318,48 @@ function M.axeKillsLoop()
                 hrp.CFrame = CFrame.new(targetPos)
             end
 
-            -- Class implementation.
-            pcall(_G.zeroEnemyHealth, monster)
-            task.wait(1)
-
-            local hitCount = 0
-            while monster.Parent
-                and isCharacterAlive() and hitCount < 200 do
-                local currentHrp = LP.Character
-                    and LP.Character:FindFirstChild("HumanoidRootPart")
-                if not currentHrp then break end
-
-                local ok, err = pcall(function()
-                    local ev = (_G.Event and _G.Event or Event)
-                    ev:InvokeServer(monster, axeRef, (_G.ownerId or ownerId), currentHrp.CFrame, false)
-                end)
-                if not ok then
-                    Log.err("[Woodsman] hit request failed: " .. tostring(err), "stopping hits on this monster")
-                    break
+            -- Zero the HP only after the server starts the chase, then one axe hit (_G.WSM_MeleeKill in MainScript)
+            if type(_G.WSM_MeleeKill) == "function" then
+                local okKill, killErr = pcall(_G.WSM_MeleeKill, monster, axeRef, {
+                    snap = function(m)
+                        local h = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+                        local r = m:FindFirstChild("HumanoidRootPart") or m.PrimaryPart
+                        if not (h and r) then return end
+                        local p = r.Position + Vector3.new(0, 20, 0)
+                        if _G.floatAP and _G.floatAP.Parent then _G.floatAP.Position = p end
+                        h.CFrame = CFrame.new(p)
+                    end,
+                    abort = function()
+                        return not isCharacterAlive() or checkAnyCultistSpawned()
+                    end,
+                })
+                if not okKill then
+                    Log.err("[Woodsman] kill routine failed: " .. tostring(killErr), "continuing with the next monster")
                 end
+            else
+                -- old recipe (MainScript without _G.WSM_MeleeKill)
+                pcall(_G.zeroEnemyHealth, monster)
+                task.wait(1)
 
-                hitCount += 1
-                task.wait(0.1)
+                local hitCount = 0
+                while monster.Parent
+                    and isCharacterAlive() and hitCount < 200 do
+                    local currentHrp = LP.Character
+                        and LP.Character:FindFirstChild("HumanoidRootPart")
+                    if not currentHrp then break end
+
+                    local ok, err = pcall(function()
+                        local ev = (_G.Event and _G.Event or Event)
+                        ev:InvokeServer(monster, axeRef, (_G.ownerId or ownerId), currentHrp.CFrame, false)
+                    end)
+                    if not ok then
+                        Log.err("[Woodsman] hit request failed: " .. tostring(err), "stopping hits on this monster")
+                        break
+                    end
+
+                    hitCount += 1
+                    task.wait(0.1)
+                end
             end
         end
     end
