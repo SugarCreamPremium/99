@@ -372,8 +372,21 @@ function M.nightLoop()
                 return
             end
 
-            -- รอ 1 วิก่อนเริ่ม dissolve (ให้ Player settle หลัง warp)
-            task.wait(1)
+            -- zero the HP, then wait for the server chase instead of a fixed 1s (the dissolve loop below fires right after)
+            -- "skip" (zero refused / monster that never chases) keeps the old 1s wait
+            do
+                local fn = _G.WSM_ZeroAfterChase
+                local r = "skip"
+                if type(fn) == "function" then
+                    local okC, rc = pcall(fn, monster, { abort = function() return not isCharacterAlive() end })
+                    r = okC and rc or "skip"
+                end
+                if r == "chased" then
+                    task.wait(0.05)
+                elseif r == "skip" then
+                    task.wait(1)
+                end
+            end
 
             -- Dissolve loop: zero HP + fire ทุก 0.2s จนกว่า server ตอบ Success=true หรือเกิน 3 วินาที
             local tStart = os.clock()
