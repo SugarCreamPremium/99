@@ -660,6 +660,30 @@ end
 -- Kill sequence for one monster (outside a Stronghold)
 -- Returns "killed", "failed" or "abort".
 -- ============================================
+-- zero the HP, then wait until the server starts the chase (_G.WSM_ZeroAfterChase in MainScript) instead of a fixed
+-- ZERO_SETTLE. A "skip" (zero refused / monster that never chases) keeps the old fixed wait.
+local function zeroSettle(monster, abortFn)
+    local fn = _G.WSM_ZeroAfterChase
+    if type(fn) ~= "function" then
+        pcall(_G.zeroEnemyHealth, monster)
+        trackWait(monster, ZERO_SETTLE)
+        return
+    end
+    local ok, r = pcall(fn, monster, {
+        wait = function(t) trackWait(monster, t) end,
+        abort = abortFn or function() return not isAlive() end,
+    })
+    if not ok then
+        pcall(_G.zeroEnemyHealth, monster)
+        r = "skip"
+    end
+    if r == "chased" then
+        trackWait(monster, 0.05)
+    elseif r == "skip" then
+        trackWait(monster, ZERO_SETTLE)
+    end
+end
+
 local function killTarget(monster)
     local flame = getFlame()
     if not flame then return "abort" end
@@ -680,8 +704,7 @@ local function killTarget(monster)
     for _ = 1, 1 + EXTRA_ZERO_ROUNDS do
         if stop() then break end
         if isDead(monster) then return "killed" end
-        pcall(_G.zeroEnemyHealth, monster)
-        trackWait(monster, ZERO_SETTLE)
+        zeroSettle(monster, stop)
         if isDead(monster) then return "killed" end
         local r = fire(monster, flame)
         if r == "skip" then return "failed" end
@@ -740,7 +763,7 @@ end
 -- Stronghold hook (called by Module_Stronghold after it zeroed the cultists)
 -- Returns false when the flamethrower cannot be used (the caller falls back to its normal hit).
 -- ============================================
-function M.strongholdHit(cultists, hrp)
+function M.strongholdHit(cultists, hrp, noZero)
     if type(cultists) ~= "table" then return false end
     if not isAlive() then return false end
     local flame = getFlame()
@@ -758,7 +781,9 @@ function M.strongholdHit(cultists, hrp)
     local targets = {}
     for _, c in ipairs(cultists) do
         if c and c.Parent and not isDead(c) then
-            pcall(_G.zeroEnemyHealth, c) -- quick zero again (finish mode calls this without its own wait)
+            if not noZero then -- noZero = a normal shot at a cultist that does not chase us yet
+                pcall(_G.zeroEnemyHealth, c) -- quick zero again (finish mode calls this without its own wait)
+            end
             targets[#targets + 1] = c
         end
     end
