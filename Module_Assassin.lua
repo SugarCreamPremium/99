@@ -430,7 +430,26 @@ local function huntCycle(tool)
         hoverAt(root.Position + Vector3.new(0, height, 0))
         if not equip(tool) then break end
 
-        if mode == "zero" then
+        if mode == "zero" and type(_G.WSM_MeleeKill) == "function" then
+            -- zero the HP only after the server starts the chase, then one hit (_G.WSM_MeleeKill in MainScript)
+            local okKill, deadNow, how = pcall(_G.WSM_MeleeKill, target, tool, {
+                cooldown = cooldown,
+                deadline = os.clock() + math.max(1, deadline - tick()),
+                snap = function(m)
+                    local r = rootOf(m)
+                    if r then hoverAt(r.Position + Vector3.new(0, height, 0)) end
+                end,
+                abort = function()
+                    return not (target.Parent and isAlive()) or anyCultist() or M.isKillsDone()
+                end,
+            })
+            if okKill and deadNow then
+                died = true
+            elseif okKill and how ~= "abort" and how ~= "skip" then
+                hits = MAX_HITS_ZERO -- did not die: counts as a zero failure below
+            end
+            break
+        elseif mode == "zero" then
             if not zeroed then
                 zeroed = true
                 pcall(_G.zeroEnemyHealth, target)
