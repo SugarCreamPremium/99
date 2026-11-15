@@ -204,6 +204,133 @@ local function isStrongholdCleared()
     return clearHits >= CLEAR_CONFIRM_COUNT
 end
 
+-- ============================================
+-- CHASE SWEEP (Config.StrongholdChase, default on; axe / scythe only):
+--   1) one NORMAL hit on every cultist (they notice us)
+--   2) every cultist that chases us (ChasingPlayer = our UserId): zero its HP + ONE hit = dead. All chasers at once,
+--      repeated for CHASE_WINDOW seconds because more of them start chasing a bit later
+--   3) the ones that still do not chase: hunted ONE BY ONE (warp over it, normal hit, wait for the chase, zero + one hit,
+--      plain hits as a fallback)
+-- While this runs _G.WSM_StrongholdChaseMode = true: the HP Zero Watcher in MainScript only zeroes cultists that chase us.
+-- ============================================
+local CHASE_WINDOW = 2.0   -- seconds to keep collecting chasers after the first normal hit
+local SOLO_GATE = 2.5      -- max wait for one cultist to start chasing when it is hunted alone
+local SOLO_LIMIT = 8       -- max seconds on one cultist when it is hunted alone (the next round retries it)
+local CHASE_SETTLE = 0.05  -- pause between "zeroed" and the hit (the zero must reach the server first)
+
+local function cultistDead(c)
+    return not c.Parent or c:GetAttribute("Dead") == true or c:HasTag("CultistCorpse")
+end
+
+local function chasingMe(c)
+    return c:GetAttribute("ChasingPlayer") == LocalPlayer.UserId
+end
+
+local function chaseWeapon()
+    if isVampire and vampireScythe then
+        pcall(function() Client.InventoryHandler.RequestEquipItem(vampireScythe) end)
+        return vampireScythe
+    end
+    return axe
+end
+
+-- one hit, nil = the server refused it (weapon cooldown)
+local function chaseHit(c, weapon)
+    local h = getLiveParts()
+    if not (h and weapon and c.Parent) then return nil end
+    if isVampire and weapon == vampireScythe and not isVampireAllQuestDone() then
+        pcall(function() Vampire.keepHPOne() end)
+    end
+    local ok, res = pcall(function() return Event:InvokeServer(c, weapon, ownerId, h.CFrame, false) end)
+    return ok and res or nil
+end
+
+-- cultists that chase us: zero them all, then ONE hit each (a nil reply = cooldown, retried shortly)
+local function killChasers(list, weapon)
+    for _, c in ipairs(list) do
+        pcall(function() zeroEnemyHealth(c) end)
+    end
+    task.wait(CHASE_SETTLE)
+    for _, c in ipairs(list) do
+        -- a nil reply = this cultist's hit cooldown (0.5s after the normal hit) is still running: retry shortly
+        for _ = 1, 6 do
+            if cultistDead(c) or chaseHit(c, weapon) ~= nil then break end
+            task.wait(0.1)
+        end
+    end
+    local t = os.clock()
+    local function allDead()
+        for _, c in ipairs(list) do
+            if not cultistDead(c) then return false end
+        end
+        return true
+    end
+    while os.clock() - t < 0.6 and not allDead() do task.wait(0.05) end
+end
+
+local function soloHunt(c, weapon)
+    local cooldown = math.max((weapon and weapon:GetAttribute("ToolCooldown")) or 0.5, 0.1)
+    local function snap()
+        local r = c:FindFirstChild("HumanoidRootPart") or c.PrimaryPart
+        local h = getLiveParts()
+        if r and h then
+            h.CFrame = CFrame.new(r.Position + Vector3.new(0, HOVER_HEIGHT, 0)) * CFrame.Angles(math.rad(-90), 0, 0)
+        end
+    end
+    snap()
+    task.wait(0.1)
+    chaseHit(c, weapon) -- normal hit: it notices us
+    local t0 = os.clock()
+    while os.clock() - t0 < SOLO_GATE and not cultistDead(c) and not chasingMe(c) do
+        task.wait(0.05)
+    end
+    if cultistDead(c) then return end
+    if chasingMe(c) then
+        killChasers({ c }, weapon)
+        if cultistDead(c) then return end
+    end
+    -- fallback: normal hits at the weapon cooldown
+    local deadline = os.clock() + SOLO_LIMIT
+    while not cultistDead(c) and os.clock() < deadline do
+        if isStrongholdCleared() then return end
+        snap()
+        local res = chaseHit(c, weapon)
+        task.wait(res == nil and 0.1 or (cooldown + 0.05))
+    end
+end
+
+local function chaseSweep(cultists)
+    local weapon = chaseWeapon()
+    -- 1) normal hit only on the cultists that do not chase us yet (the others skip the hit and its cooldown)
+    for _, c in ipairs(cultists) do
+        if c.Parent and not cultistDead(c) and not chasingMe(c) then chaseHit(c, weapon) end
+    end
+    -- 2) everyone that chases us: zero + one hit
+    local tried = {}
+    local t0 = os.clock()
+    while os.clock() - t0 < CHASE_WINDOW do
+        if isStrongholdCleared() then return end
+        local chasers, alive = {}, 0
+        for _, c in ipairs(cultists) do
+            if not cultistDead(c) then
+                alive += 1
+                if not tried[c] and chasingMe(c) then
+                    tried[c] = true
+                    chasers[#chasers + 1] = c
+                end
+            end
+        end
+        if alive == 0 then return end
+        if #chasers > 0 then killChasers(chasers, weapon) end
+        task.wait(0.05)
+    end
+    -- 3) the rest one by one
+    for _, c in ipairs(cultists) do
+        if isStrongholdCleared() then return end
+        if not cultistDead(c) then soloHunt(c, weapon) end
+    end
+end
+
 local TOTAL_ROUNDS = 3
 local completedRounds = 0
 
@@ -285,6 +412,9 @@ local function doOneRound()
             specialWeaponWasOn = po
             local pyroOn = po and _G.WSM_Pyromaniac and _G.WSM_Pyromaniac.isPyromaniac
             local gunOn = po and _G.WSM_Gunslinger and _G.WSM_Gunslinger.isGunslinger
+            -- chase sweep: axe / scythe classes only (Config.StrongholdChase = false turns it off)
+            local chaseMode = not useCannon and not po and (Config and Config.StrongholdChase) ~= false
+            _G.WSM_StrongholdChaseMode = chaseMode
 
             -- re-equip axe ก่อนตีทุก tick (เฉพาะตอนไม่ใช้ cannon)
             if not useCannon and not po then
@@ -327,20 +457,28 @@ local function doOneRound()
                 -- รอ 0.2 วิ ก่อนลดเลือด (ให้เซิร์ฟทันเห็น CFrame ใหม่ก่อน)
                 task.wait(0.2)
 
-                -- ลดเลือดทุกตัวพร้อมกัน (1 ครั้งต่อตัว) - เร็วกว่าทีละตัวมาก
-                -- ทำเสมอ (ทั้ง cannon class และ axe class) - ให้ Cultist ตายเร็ว
-                for _, cultist in ipairs(validCultists) do
-                    pcall(function() zeroEnemyHealth(cultist) end)
-                end
+                if chaseMode then
+                    -- chase sweep: normal hit -> chasers get zero + one hit -> the rest one by one
+                    local okSweep, sweepErr = pcall(chaseSweep, validCultists)
+                    if not okSweep then
+                        Log.err("[Fight] chase sweep failed: " .. tostring(sweepErr), "the next tick tries again")
+                    end
+                else
+                    -- ลดเลือดทุกตัวพร้อมกัน (1 ครั้งต่อตัว) - เร็วกว่าทีละตัวมาก
+                    -- ทำเสมอ (ทั้ง cannon class และ axe class) - ให้ Cultist ตายเร็ว
+                    for _, cultist in ipairs(validCultists) do
+                        pcall(function() zeroEnemyHealth(cultist) end)
+                    end
 
-                -- รอ 1 วิ ก่อนโจมตี (ให้เซิร์ฟทันเห็น CFrame ใหม่ + Health=0 replicate)
-                task.wait(1)
+                    -- รอ 1 วิ ก่อนโจมตี (ให้เซิร์ฟทันเห็น CFrame ใหม่ + Health=0 replicate)
+                    task.wait(1)
+                end
 
                 -- ตีทุกตัวพร้อมกันจากจุด centroid เดียวกัน
                 -- (ถ้า useCannon → skip - background loop ยิงให้แล้ว)
                 -- (Vampire: ใช้ Scythe แทน axe + keepHPOne ถ้า Lifesteal ยังไม่เสร็จ)
                 -- (Witch potion-only: no axe hits, Module_Witch throws the potion instead)
-                if not useCannon and not po then
+                if not useCannon and not po and not chaseMode then
                     -- เลือก weapon: Scythe ถ้า Vampire (ถือ Scythe จริง), axe ถ้า class อื่น
                     local weapon
                     if isVampire and vampireScythe then
@@ -379,6 +517,7 @@ local function doOneRound()
 
                 -- นับรอบที่ตัวนี้ยังไม่ตาย: ปรับเลือดติด = +1, ปรับเลือดไม่ติด = +2 (ไม่ทำงาน = นับหนัก)
                 for _, cultist in ipairs(validCultists) do
+                    if chaseMode and cultistDead(cultist) then continue end
                     local attrZero = cultist:GetAttribute("Health") == 0
                     local hum = cultist:FindFirstChildOfClass("Humanoid")
                         or cultist:FindFirstChildWhichIsA("Humanoid", true)
@@ -518,6 +657,7 @@ while completedRounds < TOTAL_ROUNDS do
     end
 
     doOneRound()
+    _G.WSM_StrongholdChaseMode = false -- the HP Zero Watcher goes back to zeroing every cultist
     completedRounds += 1
 
     -- เช็ค quest ของ class ที่ equip อยู่ ถ้าครบตาม level → ตั้ง flag (รอจบ loop + เก็บเพชรก่อน)
