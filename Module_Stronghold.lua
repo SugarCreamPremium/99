@@ -331,6 +331,22 @@ local function chaseSweep(cultists)
     end
 end
 
+-- ranged weapons (flamethrower / revolver / cannon): the cultists that already chase us, and the others.
+-- Waits up to `window` seconds for the first chaser (the cannon shoots by itself in the background: window 0).
+local function rangedChasers(cultists, window)
+    local t0 = os.clock()
+    while true do
+        local chasers, others = {}, {}
+        for _, c in ipairs(cultists) do
+            if not cultistDead(c) then
+                if chasingMe(c) then chasers[#chasers + 1] = c else others[#others + 1] = c end
+            end
+        end
+        if #chasers > 0 or os.clock() - t0 >= window then return chasers, others end
+        task.wait(0.05)
+    end
+end
+
 local TOTAL_ROUNDS = 3
 local completedRounds = 0
 
@@ -414,7 +430,10 @@ local function doOneRound()
             local gunOn = po and _G.WSM_Gunslinger and _G.WSM_Gunslinger.isGunslinger
             -- chase sweep: axe / scythe classes only (Config.StrongholdChase = false turns it off)
             local chaseMode = not useCannon and not po and (Config and Config.StrongholdChase) ~= false
-            _G.WSM_StrongholdChaseMode = chaseMode
+            -- ranged weapons (cannon / flamethrower / revolver): only the cultists that chase us are zeroed
+            local rangedChase = (useCannon or pyroOn or gunOn) and (Config and Config.StrongholdChase) ~= false
+            rangedChase = rangedChase and true or false
+            _G.WSM_StrongholdChaseMode = (chaseMode or rangedChase) and true or false
 
             -- re-equip axe ก่อนตีทุก tick (เฉพาะตอนไม่ใช้ cannon)
             if not useCannon and not po then
@@ -457,11 +476,25 @@ local function doOneRound()
                 -- รอ 0.2 วิ ก่อนลดเลือด (ให้เซิร์ฟทันเห็น CFrame ใหม่ก่อน)
                 task.wait(0.2)
 
+                local hookTargets, hookNoZero = validCultists, false
                 if chaseMode then
                     -- chase sweep: normal hit -> chasers get zero + one hit -> the rest one by one
                     local okSweep, sweepErr = pcall(chaseSweep, validCultists)
                     if not okSweep then
                         Log.err("[Fight] chase sweep failed: " .. tostring(sweepErr), "the next tick tries again")
+                    end
+                elseif rangedChase then
+                    -- zero only the cultists that chase us; the flamethrower / revolver hook shoots exactly those.
+                    -- Nobody chases after the window: the hook gets the others as plain shots (they notice us, the next tick zeroes them)
+                    local chasers, others = rangedChasers(validCultists, useCannon and 0 or CHASE_WINDOW)
+                    for _, c in ipairs(chasers) do
+                        pcall(function() zeroEnemyHealth(c) end)
+                    end
+                    if #chasers > 0 then
+                        task.wait(CHASE_SETTLE)
+                        hookTargets = chasers
+                    else
+                        hookTargets, hookNoZero = others, true
                     end
                 else
                     -- ลดเลือดทุกตัวพร้อมกัน (1 ครั้งต่อตัว) - เร็วกว่าทีละตัวมาก
@@ -506,18 +539,18 @@ local function doOneRound()
                 -- Pyromaniac: flamethrower kill instead of the axe (HP is already zeroed above)
                 local pyro = _G.WSM_Pyromaniac
                 if po and pyro and pyro.isPyromaniac and type(pyro.strongholdHit) == "function" then
-                    pcall(pyro.strongholdHit, validCultists, hrp)
+                    pcall(pyro.strongholdHit, hookTargets, hrp, hookNoZero)
                 end
 
                 -- Gunslinger: Trusty Revolver shots instead of the axe (HP is already zeroed above, except in plain mode)
                 local gunslinger = _G.WSM_Gunslinger
                 if po and gunslinger and gunslinger.isGunslinger and type(gunslinger.strongholdHit) == "function" then
-                    pcall(gunslinger.strongholdHit, validCultists, hrp)
+                    pcall(gunslinger.strongholdHit, hookTargets, hrp, hookNoZero)
                 end
 
                 -- นับรอบที่ตัวนี้ยังไม่ตาย: ปรับเลือดติด = +1, ปรับเลือดไม่ติด = +2 (ไม่ทำงาน = นับหนัก)
                 for _, cultist in ipairs(validCultists) do
-                    if chaseMode and cultistDead(cultist) then continue end
+                    if (chaseMode or rangedChase) and cultistDead(cultist) then continue end
                     local attrZero = cultist:GetAttribute("Health") == 0
                     local hum = cultist:FindFirstChildOfClass("Humanoid")
                         or cultist:FindFirstChildWhichIsA("Humanoid", true)
